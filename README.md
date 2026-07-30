@@ -119,8 +119,8 @@ x-api-key: <PROXY_API_KEY>
 **CN 后端**（必须）：
 
 ```bash
-npm install -g @qodercn-ai/qoderclicn
-qoderclicn --version
+npm install
+node node_modules/@qodercn-ai/qoderclicn/bundle/qoderclicn.js --version
 ```
 
 **Global 后端**（可选）：

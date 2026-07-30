@@ -11,6 +11,9 @@ importers:
       '@qoder-ai/qodercli':
         specifier: ^1.1.8
         version: 1.1.8
+      '@qodercn-ai/qoderclicn':
+        specifier: ^1.1.9
+        version: 1.1.9
       cors:
         specifier: ^2.8.5
         version: 2.8.6
@@ -211,6 +214,42 @@ packages:
 
   '@qoder-ai/qodercli@1.1.8':
     resolution: {integrity: sha512-6EEYgdiH/NltEW78YAA/MlxOOYqA3yTTdYLPaGzJpswDEbZ6aUbjnfo0cfmGJaYrZYCTl9T8giQmCeOawKVvVg==}
+    engines: {node: '>=20.0.0'}
+    os: [darwin, linux, win32]
+    hasBin: true
+
+  '@qodercn-ai/qoderclicn-ripgrep-darwin-arm64@1.1.9':
+    resolution: {integrity: sha512-EoFrHRf9WXrV69N6XtmDCD7OkAn+/zlb76byq0Jj5+zez0VPq7DH07IGczAi4BCdXsTJVuBdh9hV+RS+1raN2Q==}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@qodercn-ai/qoderclicn-ripgrep-darwin-x64@1.1.9':
+    resolution: {integrity: sha512-llHeTQaPwr50tMcirZoZ4Qw2AkCOwuyQ7SXNH0C7bc1TYNkrWhNNjPJQPbhJm4Qu+hQppkiGDvr/TMnwqMc1zg==}
+    cpu: [x64]
+    os: [darwin]
+
+  '@qodercn-ai/qoderclicn-ripgrep-linux-arm64@1.1.9':
+    resolution: {integrity: sha512-6aIDgkheOn0YE3mLZX5n7ulXxXkzby1ErypsTkHc6ysIKvrUH0NiVpLcyhLIg9g+dtHAKSRqDbjmfdIcah2NsQ==}
+    cpu: [arm64]
+    os: [linux]
+
+  '@qodercn-ai/qoderclicn-ripgrep-linux-x64@1.1.9':
+    resolution: {integrity: sha512-Mlx4OGKUkmD85Ua0N1YGaABD42+wQ6id7PDgvL324Z2w1D7BdnGAipn9rf2ccMlYh0pfAIlj2C9r8WOkIaPkFQ==}
+    cpu: [x64]
+    os: [linux]
+
+  '@qodercn-ai/qoderclicn-ripgrep-win32-arm64@1.1.9':
+    resolution: {integrity: sha512-qc81w4B0JP9/TQxQllROUOaadvK9ZoluluJex7hAXoqXWFOHP3ylmjwZiEWmglQr15MqHUuuCQY1EXZgVch0ow==}
+    cpu: [arm64]
+    os: [win32]
+
+  '@qodercn-ai/qoderclicn-ripgrep-win32-x64@1.1.9':
+    resolution: {integrity: sha512-QabGBVcQoWhZgKG8KjwWTpEvDkq+2MhkaWBDkmJrBVWo3EPp8LVwGIQJeePPVLU++DZQ59SNPiefDC8m9zxQyA==}
+    cpu: [x64]
+    os: [win32]
+
+  '@qodercn-ai/qoderclicn@1.1.9':
+    resolution: {integrity: sha512-0Clye0am/Stn8bw4HUZcP6jmmRhvYY2azNLmyhredjI9igESF0igbMdfIOwaNtBZisqK2q5gKr7iBfj7FaW/sw==}
     engines: {node: '>=20.0.0'}
     os: [darwin, linux, win32]
     hasBin: true
@@ -650,6 +689,35 @@ snapshots:
       '@qoder-ai/qodercli-ripgrep-linux-x64': 1.1.8
       '@qoder-ai/qodercli-ripgrep-win32-arm64': 1.1.8
       '@qoder-ai/qodercli-ripgrep-win32-x64': 1.1.8
+
+  '@qodercn-ai/qoderclicn-ripgrep-darwin-arm64@1.1.9':
+    optional: true
+
+  '@qodercn-ai/qoderclicn-ripgrep-darwin-x64@1.1.9':
+    optional: true
+
+  '@qodercn-ai/qoderclicn-ripgrep-linux-arm64@1.1.9':
+    optional: true
+
+  '@qodercn-ai/qoderclicn-ripgrep-linux-x64@1.1.9':
+    optional: true
+
+  '@qodercn-ai/qoderclicn-ripgrep-win32-arm64@1.1.9':
+    optional: true
+
+  '@qodercn-ai/qoderclicn-ripgrep-win32-x64@1.1.9':
+    optional: true
+
+  '@qodercn-ai/qoderclicn@1.1.9':
+    dependencies:
+      sharp: 0.34.5
+    optionalDependencies:
+      '@qodercn-ai/qoderclicn-ripgrep-darwin-arm64': 1.1.9
+      '@qodercn-ai/qoderclicn-ripgrep-darwin-x64': 1.1.9
+      '@qodercn-ai/qoderclicn-ripgrep-linux-arm64': 1.1.9
+      '@qodercn-ai/qoderclicn-ripgrep-linux-x64': 1.1.9
+      '@qodercn-ai/qoderclicn-ripgrep-win32-arm64': 1.1.9
+      '@qodercn-ai/qoderclicn-ripgrep-win32-x64': 1.1.9
 
   accepts@1.3.8:
     dependencies:

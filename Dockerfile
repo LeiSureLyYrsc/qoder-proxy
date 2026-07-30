@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci --omit=dev
+RUN test -x /app/node_modules/.bin/qoderclicn
 
 COPY clean ./clean
 COPY public ./public
