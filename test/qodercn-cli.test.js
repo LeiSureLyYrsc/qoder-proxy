@@ -136,7 +136,10 @@ test('wraps Windows cmd shims for spawning', () => {
   const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
   Object.defineProperty(process, 'platform', { value: 'win32' });
   try {
-    const spec = buildSpawnCommand('C:\\bin\\qoderclicn.cmd', ['--version']);
+    const spec = buildSpawnCommand('C:\\bin\\qoderclicn.cmd', ['--version'], {
+      bundlePackage: '@qodercn-ai/missing-cli',
+      bundlePath: 'bundle/missing.js',
+    });
     assert.match(spec.command, /cmd\.exe$/i);
     assert.deepEqual(spec.args.slice(0, 4), ['/d', '/s', '/c', 'C:\\bin\\qoderclicn.cmd']);
     assert.equal(spec.args.at(-1), '--version');
