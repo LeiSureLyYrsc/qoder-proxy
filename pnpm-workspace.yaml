@@ -1,0 +1,11 @@
+allowBuilds:
+  '@qoder-ai/qodercli': true
+  sharp: true
+minimumReleaseAgeExclude:
+  - '@qoder-ai/qodercli-ripgrep-darwin-arm64@1.1.8'
+  - '@qoder-ai/qodercli-ripgrep-darwin-x64@1.1.8'
+  - '@qoder-ai/qodercli-ripgrep-linux-arm64@1.1.8'
+  - '@qoder-ai/qodercli-ripgrep-linux-x64@1.1.8'
+  - '@qoder-ai/qodercli-ripgrep-win32-arm64@1.1.8'
+  - '@qoder-ai/qodercli-ripgrep-win32-x64@1.1.8'
+  - '@qoder-ai/qodercli@1.1.8'
