@@ -1,8 +1,8 @@
-const SENSITIVE_KEY_RE = /authorization|cookie|token|access_token|qodercn_personal_access_token/i;
+const SENSITIVE_KEY_RE = /authorization|cookie|token|access_token|qoder_pat|qodercn_personal_access_token/i;
 const BEARER_RE = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
 const AUTH_HEADER_RE = /\bAuthorization\s*:\s*(?!Bearer\b)[^"',\s}]+/gi;
 const ASSIGNMENT_RE =
-  /\b(cookie|token|access_token|QODERCN_PERSONAL_ACCESS_TOKEN)\s*[:=]\s*["']?[^"',\s}]+/gi;
+  /\b(cookie|token|access_token|qoder_pat|QODERCN_PERSONAL_ACCESS_TOKEN)\s*[:=]\s*["']?[^"',\s}]+/gi;
 
 function redactString(value) {
   return String(value)

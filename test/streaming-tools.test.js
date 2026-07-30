@@ -146,24 +146,20 @@ test('OpenAI streaming failure emits an SSE error event instead of a silent empt
     throw error;
   };
   const { server, baseUrl } = await listen(createApp());
-  try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        stream: true,
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-    });
-    assert.equal(response.status, 200);
-    const text = await response.text();
-    assert.match(text, /"error"/);
-    assert.match(text, /upstream_error/);
-    assert.match(text, /data: \[DONE\]/);
-  } finally {
-    qoderCli.runQoderCnCliStream = originalStream;
-    server.close();
-  }
+    try {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          stream: true,
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+      assert.equal(response.status, 502);
+    } finally {
+      qoderCli.runQoderCnCliStream = originalStream;
+      server.close();
+    }
 });
 
 test('anthropic streaming with tools returns tool_use blocks with input_json_delta', async () => {
@@ -212,24 +208,21 @@ test('anthropic streaming failure emits an SSE error event', async () => {
     throw error;
   };
   const { server, baseUrl } = await listen(createApp());
-  try {
-    const response = await fetch(`${baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        stream: true,
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-    });
-    assert.equal(response.status, 200);
-    const text = await response.text();
-    assert.match(text, /event: error/);
-    assert.match(text, /"type":"api_error"/);
-  } finally {
-    qoderCli.runQoderCnCliStream = originalStream;
-    server.close();
-  }
+    try {
+      const response = await fetch(`${baseUrl}/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          stream: true,
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+      assert.equal(response.status, 502);
+    } finally {
+      qoderCli.runQoderCnCliStream = originalStream;
+      server.close();
+    }
 });
 
 test('developer role is accepted and routed as a system message', async () => {

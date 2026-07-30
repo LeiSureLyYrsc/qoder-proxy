@@ -1,0 +1,12 @@
+[
+  {
+    "id": "556fc73d-aab9-4a9b-8425-4cdfe7d86499",
+    "name": "test",
+    "token": "fake",
+    "backend": "cn",
+    "status": "active",
+    "rateLimitUntil": null,
+    "errorCount": 0,
+    "addedAt": 1785376770233
+  }
+]

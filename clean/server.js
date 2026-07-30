@@ -2,6 +2,7 @@ const { createApp } = require('./app');
 const { log } = require('./logger');
 const { isProxyAuthEnabled } = require('./auth');
 const { getCliBackend } = require('./qodercn-cli');
+const accountsManager = require('./accounts');
 
 const HOST = '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
@@ -10,12 +11,13 @@ const app = createApp();
 
 app.listen(PORT, HOST, () => {
   const backend = getCliBackend();
+  const accounts = accountsManager.getAll();
+  const activeCount = accounts.filter(a => a.status === 'active').length;
+  
   log(`Qoder Proxy listening on http://${HOST}:${PORT}`);
-  log('CLI backend', {
-    name: backend.name,
-    command: backend.command,
-    home: backend.homeDir,
-    token_configured: Boolean(process.env[backend.tokenEnvVar] || process.env.QODERCN_PERSONAL_ACCESS_TOKEN),
+  log('Accounts pool', {
+    total: accounts.length,
+    active: activeCount
   });
   log('security', {
     proxy_api_key: isProxyAuthEnabled() ? 'enabled' : 'not set',

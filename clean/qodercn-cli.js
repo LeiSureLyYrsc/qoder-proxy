@@ -21,8 +21,8 @@ const ATTACHMENT_INSTRUCTION =
  * The backend is selected via CLI_BACKEND env var (default: "cn").
  * Individual fields can be overridden with CLI_COMMAND and CLI_TOKEN.
  */
-function getCliBackend() {
-  const backend = (process.env.CLI_BACKEND || 'cn').toLowerCase();
+function getCliBackend(backendName) {
+  const backend = (backendName || process.env.CLI_BACKEND || 'cn').toLowerCase();
 
   if (backend === 'global') {
     return {
@@ -31,7 +31,6 @@ function getCliBackend() {
       bundlePackage: '@qoder-ai/qodercli',
       bundlePath: path.join('bundle', 'qodercli.js'),
       homeDir: path.join(process.env.USERPROFILE || process.env.HOME || '~', '.qoder'),
-      tokenEnvVar: 'QODER_PAT',
     };
   }
 
@@ -42,7 +41,6 @@ function getCliBackend() {
     bundlePackage: '@qodercn-ai/qoderclicn',
     bundlePath: path.join('bundle', 'qoderclicn.js'),
     homeDir: path.join(process.env.USERPROFILE || process.env.HOME || '~', '.qoderworkcn'),
-    tokenEnvVar: 'QODERCN_PERSONAL_ACCESS_TOKEN',
   };
 }
 
@@ -216,12 +214,24 @@ function ensureRuntimeHome(rootDir) {
 
 function buildChildEnv(rootDir, token, backend) {
   ensureRuntimeHome(rootDir);
-  const cfg = backend || getCliBackend();
+  const cfg = backend;
   // Don't override HOME/USERPROFILE — let the CLI find its auth config
   // in the real home directory (same as running the CLI directly).
   const env = { ...process.env };
-  // Set the backend-specific token env var
-  env[cfg.tokenEnvVar] = token;
+  
+  if (cfg.name === 'global') {
+     // For global backend, 'token' is actually the absolute path to the isolated home directory
+     // where the OAuth config was saved.
+     env.HOME = token;
+     env.USERPROFILE = token;
+     // Clean up any leaked variables that might interfere
+     delete env.QODER_PERSONAL_ACCESS_TOKEN;
+     delete env.QODER_PAT;
+  } else {
+     // For CN backend, token is the actual PAT string. Let it use default HOME.
+     env.QODERCN_PERSONAL_ACCESS_TOKEN = token;
+  }
+  
   return env;
 }
 
@@ -395,18 +405,19 @@ function runQoderCnCli({
   contextWindow,
   maxOutputTokens,
   signal,
+  account, // Explicitly pass account
   rootDir = process.cwd(),
 }) {
-  const backend = getCliBackend();
-  const token = process.env[backend.tokenEnvVar];
-  if (!token) {
-    throw new AppError(
-      401,
-      'cli_token_missing',
-      `${backend.tokenEnvVar} is not configured. Set it in .env or run \`${backend.command} login\` first.`,
-      'authentication_error'
-    );
+  if (!account || !account.token) {
+    return Promise.reject(new AppError(
+      500,
+      'no_account_available',
+      'No active account available in the pool.'
+    ));
   }
+
+  const backend = getCliBackend(account.backend);
+  const token = account.token;
 
   // Extract system messages for --append-system-prompt
   const systemMessages = messages.filter((m) => isSystemRole(m.role));
@@ -515,6 +526,22 @@ function runQoderCnCli({
       if (code !== 0) {
         const stderr = Buffer.concat(stderrChunks).toString('utf8');
         const detail = redactString(stderr).trim();
+        
+        // Check for specific error types to handle rate limits and quota
+        const lowerDetail = detail.toLowerCase();
+        if (lowerDetail.includes('429') || lowerDetail.includes('rate limit') || lowerDetail.includes('too many requests')) {
+           finish(reject, new AppError(429, 'rate_limit_exceeded', `Rate limit exceeded for account ${account.name || account.id}.`));
+           return;
+        }
+        if (lowerDetail.includes('quota') || lowerDetail.includes('insufficient') || lowerDetail.includes('payment required')) {
+           finish(reject, new AppError(402, 'quota_exhausted', `Quota exhausted for account ${account.name || account.id}.`));
+           return;
+        }
+        if (lowerDetail.includes('unauthorized') || lowerDetail.includes('invalid token')) {
+           finish(reject, new AppError(401, 'auth_error', `Authentication error for account ${account.name || account.id}.`));
+           return;
+        }
+
         const suffix = detail ? ` ${detail.slice(0, 240)}` : '';
         finish(reject, new AppError(502, 'upstream_error', `${backend.command} failed.${suffix}`));
         return;
@@ -564,19 +591,20 @@ function runQoderCnCliStream({
   contextWindow,
   maxOutputTokens,
   signal,
+  account, // Explicitly pass account
   rootDir = process.cwd(),
   onDelta,
 }) {
-  const backend = getCliBackend();
-  const token = process.env[backend.tokenEnvVar];
-  if (!token) {
-    throw new AppError(
-      401,
-      'cli_token_missing',
-      `${backend.tokenEnvVar} is not configured. Set it in .env or run \`${backend.command} login\` first.`,
-      'authentication_error'
-    );
+  if (!account || !account.token) {
+    return Promise.reject(new AppError(
+      500,
+      'no_account_available',
+      'No active account available in the pool.'
+    ));
   }
+
+  const backend = getCliBackend(account.backend);
+  const token = account.token;
 
   const systemMessages = messages.filter((m) => isSystemRole(m.role));
   const nonSystemMessages = messages.filter((m) => !isSystemRole(m.role));
@@ -729,6 +757,22 @@ function runQoderCnCliStream({
       if (code !== 0) {
         const stderr = Buffer.concat(stderrChunks).toString('utf8');
         const detail = redactString(stderr).trim();
+        
+        // Check for specific error types to handle rate limits and quota
+        const lowerDetail = detail.toLowerCase();
+        if (lowerDetail.includes('429') || lowerDetail.includes('rate limit') || lowerDetail.includes('too many requests')) {
+           finish(reject, new AppError(429, 'rate_limit_exceeded', `Rate limit exceeded for account ${account.name || account.id}.`));
+           return;
+        }
+        if (lowerDetail.includes('quota') || lowerDetail.includes('insufficient') || lowerDetail.includes('payment required')) {
+           finish(reject, new AppError(402, 'quota_exhausted', `Quota exhausted for account ${account.name || account.id}.`));
+           return;
+        }
+        if (lowerDetail.includes('unauthorized') || lowerDetail.includes('invalid token')) {
+           finish(reject, new AppError(401, 'auth_error', `Authentication error for account ${account.name || account.id}.`));
+           return;
+        }
+
         const suffix = detail ? ` ${detail.slice(0, 240)}` : '';
         finish(reject, new AppError(502, 'upstream_error', `${backend.command} failed.${suffix}`));
         return;

@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-echo Starting Qoder Proxy...
+echo Starting Qoder Proxy (Account Pool Edition)...
 echo   Project: %CD%
 echo.
 
@@ -29,22 +29,15 @@ exit /b 0
 if exist ".env" goto :env_ok
 echo [WARN] .env file not found.
 echo Run: Copy-Item .env.example .env
-echo Then edit .env and set QODERCN_PERSONAL_ACCESS_TOKEN.
 echo.
 :env_ok
-
-if defined QODERCN_PERSONAL_ACCESS_TOKEN goto :token_ok
-echo [WARN] QODERCN_PERSONAL_ACCESS_TOKEN is not set in environment.
-echo The proxy will start, but model requests will fail without a valid token.
-echo Create one at: https://qoder.com.cn/account/integrations
-echo.
-:token_ok
 
 echo Proxy will listen on:
 echo   http://127.0.0.1:3000
 echo Keep this service local. Do not bind to 0.0.0.0 or expose it publicly.
 echo.
 echo Endpoints:
+echo   GET  http://127.0.0.1:3000/ui (Local Web Console)
 echo   GET  http://127.0.0.1:3000/health
 echo   GET  http://127.0.0.1:3000/v1/models
 echo   POST http://127.0.0.1:3000/v1/chat/completions

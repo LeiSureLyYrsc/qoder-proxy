@@ -25,6 +25,8 @@ const {
 const path = require('path');
 const { trackRequest, getUsage, resetUsage, saveUsage, extractTextFromMessages } = require('./usage');
 const { executeToolCall } = require('./tools-executor');
+const accountsManager = require('./accounts');
+const oauthManager = require('./oauth-manager');
 
 const MODEL_ID = DEFAULT_MODEL_ID;
 
@@ -338,177 +340,289 @@ function createApp() {
       // tool-call JSON block that must be parsed and returned as structured
       // tool_calls, so those requests go through the buffered path below.
       if (req.body.stream && !normalizedTools) {
-        const id = `chatcmpl-${Date.now()}`;
-        const created = Math.floor(Date.now() / 1000);
-
-        res.status(200);
-        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-cache, no-transform');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders?.();
-
-        // Send role chunk first
-        writeSse(res, {
-          id,
-          object: 'chat.completion.chunk',
-          created,
-          model,
-          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
-        });
-
-        try {
-          await qoderCli.runQoderCnCliStream({
-            messages: req.body.messages,
-            model,
-            tools: normalizedTools,
-            reasoningEffort: requestOptions.reasoningEffort,
-            contextWindow: requestOptions.contextWindow,
-            maxOutputTokens: requestOptions.maxOutputTokens,
-            signal: controller.signal,
-            onDelta: (delta) => {
-              writeSse(res, {
-                id,
-                object: 'chat.completion.chunk',
-                created,
-                model,
-                choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
-              });
-            },
-          });
-        } catch (streamError) {
-          log('chat stream failed', {
-            code: streamError.code || 'internal_error',
-            status: streamError.status || 500,
-            duration_ms: Date.now() - started,
-            message: streamError.message,
-          });
-          // Headers are already sent — surface the error as an SSE event so
-          // clients render a failure instead of a silent empty message.
-          if (!res.writableEnded) {
-            try {
-              writeSse(res, {
-                error: {
-                  message: streamError.message || 'Upstream request failed.',
-                  type: 'server_error',
-                  code: streamError.code || 'internal_error',
-                },
-              });
-              res.write('data: [DONE]\n\n');
-              res.end();
-            } catch (_) { /* ignore */ }
+        let streamSuccess = false;
+        let lastError = null;
+        const maxRetries = 3;
+        const requestedBackend = process.env.CLI_BACKEND || 'cn';
+        
+        for (let retry = 0; retry < maxRetries; retry++) {
+          if (controller.signal.aborted) break;
+          
+          const account = accountsManager.getNextAvailable(requestedBackend);
+          if (!account) {
+            if (!res.headersSent) {
+              return openAiError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
+            } else {
+              break; // Cannot switch account mid-stream if headers already sent, though this usually happens before headers
+            }
           }
-          return;
+
+          log(`chat stream attempt ${retry + 1}`, { accountId: account.id, name: account.name });
+          
+          const id = `chatcmpl-${Date.now()}`;
+          const created = Math.floor(Date.now() / 1000);
+
+          try {
+            await qoderCli.runQoderCnCliStream({
+              messages: req.body.messages,
+              model,
+              tools: normalizedTools,
+              reasoningEffort: requestOptions.reasoningEffort,
+              contextWindow: requestOptions.contextWindow,
+              maxOutputTokens: requestOptions.maxOutputTokens,
+              signal: controller.signal,
+              account: account,
+              onDelta: (delta) => {
+                if (!res.headersSent) {
+                   res.status(200);
+                   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+                   res.setHeader('Cache-Control', 'no-cache, no-transform');
+                   res.setHeader('Connection', 'keep-alive');
+                   res.flushHeaders?.();
+                   writeSse(res, {
+                     id,
+                     object: 'chat.completion.chunk',
+                     created,
+                     model,
+                     choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+                   });
+                }
+                writeSse(res, {
+                  id,
+                  object: 'chat.completion.chunk',
+                  created,
+                  model,
+                  choices: [{ index: 0, delta: { content: delta }, finish_reason: null }],
+                });
+              },
+            });
+            
+            streamSuccess = true;
+            if (res.headersSent) {
+               writeSse(res, {
+                 id,
+                 object: 'chat.completion.chunk',
+                 created,
+                 model,
+                 choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+               });
+               res.write('data: [DONE]\n\n');
+               res.end();
+            } else {
+               // If runQoderCnCliStream returned immediately with empty, we still need to send headers
+               res.status(200);
+               res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+               res.setHeader('Cache-Control', 'no-cache, no-transform');
+               res.setHeader('Connection', 'keep-alive');
+               res.flushHeaders?.();
+               writeSse(res, {
+                 id,
+                 object: 'chat.completion.chunk',
+                 created,
+                 model,
+                 choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+               });
+               writeSse(res, {
+                 id,
+                 object: 'chat.completion.chunk',
+                 created,
+                 model,
+                 choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+               });
+               res.write('data: [DONE]\n\n');
+               res.end();
+            }
+            break; // Success, exit retry loop
+            
+          } catch (streamError) {
+            lastError = streamError;
+            // If headers are already sent, we cannot silently retry on another account.
+            if (res.headersSent) {
+              log('chat stream failed mid-stream', {
+                code: streamError.code || 'internal_error',
+                status: streamError.status || 500,
+                message: streamError.message,
+                account: account.id
+              });
+              try {
+                writeSse(res, {
+                  error: {
+                    message: streamError.message || 'Upstream request failed.',
+                    type: 'server_error',
+                    code: streamError.code || 'internal_error',
+                  },
+                });
+                res.write('data: [DONE]\n\n');
+                res.end();
+              } catch (_) { /* ignore */ }
+              break;
+            } else {
+               // Headers not sent, we can retry!
+               if (streamError.code === 'rate_limit_exceeded') {
+                 log('Rate limit on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'rate_limit');
+                 continue;
+               } else if (streamError.code === 'quota_exhausted') {
+                 log('Quota exhausted on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'quota_exhausted');
+                 continue;
+               } else if (streamError.code === 'auth_error') {
+                 log('Auth error on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'auth_error');
+                 continue;
+               }
+               // Other error, just throw
+               throw streamError;
+            }
+          }
+        } // end retry loop
+
+        if (!streamSuccess && !res.headersSent) {
+           throw lastError || new AppError(500, 'stream_failed', 'All streaming attempts failed.');
+        } else if (lastError && res.headersSent && !res.writableEnded) {
+            // Already handled via SSE error chunk
         }
 
-        writeSse(res, {
-          id,
-          object: 'chat.completion.chunk',
-          created,
-          model,
-          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
-        });
-        res.write('data: [DONE]\n\n');
-        res.end();
         log('chat stream completed', { duration_ms: Date.now() - started });
         trackRequest({
           model,
           inputText: extractTextFromMessages(req.body.messages),
           outputText: '',
-          isError: false,
+          isError: !streamSuccess,
         });
         return;
       }
 
-      // Non-streaming path (or tool calls with stream=true → downgraded)
-      // Build working messages for potential tool-call loops
-      let workingMessages = [...req.body.messages];
+      let maxRetries = 3;
+      let lastError = null;
       let finalContent = '';
       let finalParsedOutput = null;
-      let toolCallDepth = 0;
-      const MAX_TOOL_CALL_DEPTH = 10;
+      const requestedBackend = process.env.CLI_BACKEND || 'cn';
 
-      while (toolCallDepth < MAX_TOOL_CALL_DEPTH) {
-        const content = await qoderCli.runQoderCnCli({
-          messages: workingMessages,
-          model,
-          tools: normalizedTools,
-          reasoningEffort: requestOptions.reasoningEffort,
-          contextWindow: requestOptions.contextWindow,
-          maxOutputTokens: requestOptions.maxOutputTokens,
-          signal: controller.signal,
-        });
+      for (let retry = 0; retry < maxRetries; retry++) {
+         if (controller.signal.aborted) break;
 
-        finalContent = content;
+         const account = accountsManager.getNextAvailable(requestedBackend);
+         if (!account) {
+           return openAiError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
+         }
 
-        // Parse the output for tool calls if tools were provided
-        let parsedOutput = null;
-        if (normalizedTools) {
-          parsedOutput = parseToolCallOutput(content);
-          if (parsedOutput && parsedOutput.type === 'tool_calls') {
-            log('chat tool calls detected', {
-              tool_count: parsedOutput.toolCalls.length,
-              tools: parsedOutput.toolCalls.map((t) => t.name),
-            });
-          } else {
-            log('chat no tool calls detected', { response_type: parsedOutput?.type || 'text' });
-          }
-        }
+         try {
+            // Non-streaming path (or tool calls with stream=true → downgraded)
+            // Build working messages for potential tool-call loops
+            let workingMessages = [...req.body.messages];
+            let toolCallDepth = 0;
+            const MAX_TOOL_CALL_DEPTH = 10;
 
-        finalParsedOutput = parsedOutput;
+            while (toolCallDepth < MAX_TOOL_CALL_DEPTH) {
+              const content = await qoderCli.runQoderCnCli({
+                messages: workingMessages,
+                model,
+                tools: normalizedTools,
+                reasoningEffort: requestOptions.reasoningEffort,
+                contextWindow: requestOptions.contextWindow,
+                maxOutputTokens: requestOptions.maxOutputTokens,
+                signal: controller.signal,
+                account: account
+              });
 
-        // If no tool calls, we're done
-        if (!parsedOutput || parsedOutput.type !== 'tool_calls') {
-          break;
-        }
+              finalContent = content;
 
-        // Default: hand tool_calls back to the client, which executes tools
-        // in its own workspace. Server-side execution only when opted in.
-        if (!isServerToolExecutionEnabled()) {
-          break;
-        }
+              // Parse the output for tool calls if tools were provided
+              let parsedOutput = null;
+              if (normalizedTools) {
+                parsedOutput = parseToolCallOutput(content);
+                if (parsedOutput && parsedOutput.type === 'tool_calls') {
+                  log('chat tool calls detected', {
+                    tool_count: parsedOutput.toolCalls.length,
+                    tools: parsedOutput.toolCalls.map((t) => t.name),
+                  });
+                } else {
+                  log('chat no tool calls detected', { response_type: parsedOutput?.type || 'text' });
+                }
+              }
 
-        // Execute tool calls and build tool result messages
-        const toolResults = [];
-        const assistantToolCalls = [];
+              finalParsedOutput = parsedOutput;
 
-        for (const toolCall of parsedOutput.toolCalls) {
-          const callId = generateCallId('call_');
-          assistantToolCalls.push({
-            id: callId,
-            type: 'function',
-            function: {
-              name: toolCall.name,
-              arguments: JSON.stringify(toolCall.arguments || {}),
-            },
-          });
+              // If no tool calls, we're done
+              if (!parsedOutput || parsedOutput.type !== 'tool_calls') {
+                break;
+              }
 
-          log('executing tool', { name: toolCall.name, arguments: toolCall.arguments });
-          const result = await executeToolCall(toolCall);
-          log('tool result', { name: toolCall.name, result });
+              // Default: hand tool_calls back to the client, which executes tools
+              // in its own workspace. Server-side execution only when opted in.
+              if (!isServerToolExecutionEnabled()) {
+                break;
+              }
 
-          toolResults.push({
-            role: 'tool',
-            tool_call_id: callId,
-            content: JSON.stringify(result),
-          });
-        }
+              // Execute tool calls and build tool result messages
+              const toolResults = [];
+              const assistantToolCalls = [];
 
-        // Add assistant message with tool_calls
-        workingMessages.push({
-          role: 'assistant',
-          content: parsedOutput.prefixText || null,
-          tool_calls: assistantToolCalls,
-        });
+              for (const toolCall of parsedOutput.toolCalls) {
+                const callId = generateCallId('call_');
+                assistantToolCalls.push({
+                  id: callId,
+                  type: 'function',
+                  function: {
+                    name: toolCall.name,
+                    arguments: JSON.stringify(toolCall.arguments || {}),
+                  },
+                });
 
-        // Add tool result messages
-        workingMessages.push(...toolResults);
+                log('executing tool', { name: toolCall.name, arguments: toolCall.arguments });
+                const result = await executeToolCall(toolCall);
+                log('tool result', { name: toolCall.name, result });
 
-        toolCallDepth++;
+                toolResults.push({
+                  role: 'tool',
+                  tool_call_id: callId,
+                  content: JSON.stringify(result),
+                });
+              }
+
+              // Add assistant message with tool_calls
+              workingMessages.push({
+                role: 'assistant',
+                content: parsedOutput.prefixText || null,
+                tool_calls: assistantToolCalls,
+              });
+
+              // Add tool result messages
+              workingMessages.push(...toolResults);
+
+              toolCallDepth++;
+            }
+
+            if (toolCallDepth >= MAX_TOOL_CALL_DEPTH) {
+              log('warning: max tool call depth reached', { depth: MAX_TOOL_CALL_DEPTH });
+            }
+
+            // Success, break retry loop
+            lastError = null;
+            break;
+
+         } catch (error) {
+             lastError = error;
+             if (error.code === 'rate_limit_exceeded') {
+                 log('Rate limit on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'rate_limit');
+                 continue;
+             } else if (error.code === 'quota_exhausted') {
+                 log('Quota exhausted on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'quota_exhausted');
+                 continue;
+             } else if (error.code === 'auth_error') {
+                 log('Auth error on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'auth_error');
+                 continue;
+             }
+             // Not a retryable error
+             throw error;
+         }
       }
 
-      if (toolCallDepth >= MAX_TOOL_CALL_DEPTH) {
-        log('warning: max tool call depth reached', { depth: MAX_TOOL_CALL_DEPTH });
-      }
+      if (lastError) throw lastError;
 
       if (req.body.stream) {
         // Buffered request (tools declared) — emit the parsed result as a
@@ -517,7 +631,7 @@ function createApp() {
       } else {
         res.json(createChatCompletion({ model, content: finalContent, parsedOutput: finalParsedOutput }));
       }
-      log('chat request completed', { duration_ms: Date.now() - started, tool_call_depth: toolCallDepth });
+      log('chat request completed', { duration_ms: Date.now() - started });
       trackRequest({
         model,
         inputText: extractTextFromMessages(req.body.messages),
@@ -564,185 +678,307 @@ function createApp() {
       // tool-call JSON block that must be parsed and returned as structured
       // tool_use blocks, so those requests go through the buffered path below.
       if (req.body.stream && !(tools && tools.length)) {
-        const msgId = `msg_${Date.now()}`;
+        let streamSuccess = false;
+        let lastError = null;
+        const maxRetries = 3;
+        const requestedBackend = process.env.CLI_BACKEND || 'cn';
 
-        res.status(200);
-        res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-cache, no-transform');
-        res.setHeader('Connection', 'keep-alive');
-        res.flushHeaders?.();
+        for (let retry = 0; retry < maxRetries; retry++) {
+          if (controller.signal.aborted) break;
 
-        writeAnthropicSse(res, 'message_start', {
-          type: 'message_start',
-          message: {
-            id: msgId,
-            type: 'message',
-            role: 'assistant',
-            model,
-            content: [],
-            stop_reason: null,
-            stop_sequence: null,
-            usage: { input_tokens: 0, output_tokens: 0 },
-          },
-        });
-        writeAnthropicSse(res, 'content_block_start', {
-          type: 'content_block_start',
-          index: 0,
-          content_block: { type: 'text', text: '' },
-        });
-
-        try {
-          await qoderCli.runQoderCnCliStream({
-            messages,
-            model,
-            tools,
-            reasoningEffort: requestOptions.reasoningEffort,
-            contextWindow: requestOptions.contextWindow,
-            maxOutputTokens: requestOptions.maxOutputTokens || req.body.max_tokens,
-            signal: controller.signal,
-            onDelta: (delta) => {
-              writeAnthropicSse(res, 'content_block_delta', {
-                type: 'content_block_delta',
-                index: 0,
-                delta: { type: 'text_delta', text: delta },
-              });
-            },
-          });
-        } catch (streamError) {
-          log('anthropic stream failed', {
-            code: streamError.code || 'internal_error',
-            status: streamError.status || 500,
-            duration_ms: Date.now() - started,
-            message: streamError.message,
-          });
-          // Headers are already sent — surface the error as an SSE error
-          // event so clients render a failure instead of an empty message.
-          if (!res.writableEnded) {
-            try {
-              writeAnthropicSse(res, 'error', {
-                type: 'error',
-                error: {
-                  type: 'api_error',
-                  message: streamError.message || 'Upstream request failed.',
-                },
-              });
-              res.end();
-            } catch (_) { /* ignore */ }
+          const account = accountsManager.getNextAvailable(requestedBackend);
+          if (!account) {
+            if (!res.headersSent) {
+              return anthropicError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
+            } else {
+              break;
+            }
           }
-          return;
+
+          log(`anthropic stream attempt ${retry + 1}`, { accountId: account.id, name: account.name });
+          const msgId = `msg_${Date.now()}`;
+
+          try {
+            await qoderCli.runQoderCnCliStream({
+              messages,
+              model,
+              tools,
+              reasoningEffort: requestOptions.reasoningEffort,
+              contextWindow: requestOptions.contextWindow,
+              maxOutputTokens: requestOptions.maxOutputTokens || req.body.max_tokens,
+              signal: controller.signal,
+              account: account,
+              onDelta: (delta) => {
+                if (!res.headersSent) {
+                  res.status(200);
+                  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+                  res.setHeader('Cache-Control', 'no-cache, no-transform');
+                  res.setHeader('Connection', 'keep-alive');
+                  res.flushHeaders?.();
+
+                  writeAnthropicSse(res, 'message_start', {
+                    type: 'message_start',
+                    message: {
+                      id: msgId,
+                      type: 'message',
+                      role: 'assistant',
+                      model,
+                      content: [],
+                      stop_reason: null,
+                      stop_sequence: null,
+                      usage: { input_tokens: 0, output_tokens: 0 },
+                    },
+                  });
+                  writeAnthropicSse(res, 'content_block_start', {
+                    type: 'content_block_start',
+                    index: 0,
+                    content_block: { type: 'text', text: '' },
+                  });
+                }
+                writeAnthropicSse(res, 'content_block_delta', {
+                  type: 'content_block_delta',
+                  index: 0,
+                  delta: { type: 'text_delta', text: delta },
+                });
+              },
+            });
+
+            streamSuccess = true;
+            if (res.headersSent) {
+               writeAnthropicSse(res, 'content_block_stop', {
+                 type: 'content_block_stop',
+                 index: 0,
+               });
+               writeAnthropicSse(res, 'message_delta', {
+                 type: 'message_delta',
+                 delta: { stop_reason: 'end_turn', stop_sequence: null },
+                 usage: { output_tokens: 0 },
+               });
+               writeAnthropicSse(res, 'message_stop', { type: 'message_stop' });
+               res.end();
+            } else {
+               res.status(200);
+               res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+               res.setHeader('Cache-Control', 'no-cache, no-transform');
+               res.setHeader('Connection', 'keep-alive');
+               res.flushHeaders?.();
+
+               writeAnthropicSse(res, 'message_start', {
+                 type: 'message_start',
+                 message: {
+                   id: msgId,
+                   type: 'message',
+                   role: 'assistant',
+                   model,
+                   content: [],
+                   stop_reason: null,
+                   stop_sequence: null,
+                   usage: { input_tokens: 0, output_tokens: 0 },
+                 },
+               });
+               writeAnthropicSse(res, 'content_block_start', {
+                 type: 'content_block_start',
+                 index: 0,
+                 content_block: { type: 'text', text: '' },
+               });
+               writeAnthropicSse(res, 'content_block_stop', {
+                 type: 'content_block_stop',
+                 index: 0,
+               });
+               writeAnthropicSse(res, 'message_delta', {
+                 type: 'message_delta',
+                 delta: { stop_reason: 'end_turn', stop_sequence: null },
+                 usage: { output_tokens: 0 },
+               });
+               writeAnthropicSse(res, 'message_stop', { type: 'message_stop' });
+               res.end();
+            }
+            break; // Success
+            
+          } catch (streamError) {
+            lastError = streamError;
+            if (res.headersSent) {
+              log('anthropic stream failed mid-stream', {
+                code: streamError.code || 'internal_error',
+                status: streamError.status || 500,
+                message: streamError.message,
+              });
+              try {
+                writeAnthropicSse(res, 'error', {
+                  type: 'error',
+                  error: {
+                    type: 'api_error',
+                    message: streamError.message || 'Upstream request failed.',
+                  },
+                });
+                res.end();
+              } catch (_) { /* ignore */ }
+              break;
+            } else {
+               // Retry logic
+               if (streamError.code === 'rate_limit_exceeded') {
+                 log('Rate limit on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'rate_limit');
+                 continue;
+               } else if (streamError.code === 'quota_exhausted') {
+                 log('Quota exhausted on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'quota_exhausted');
+                 continue;
+               } else if (streamError.code === 'auth_error') {
+                 log('Auth error on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'auth_error');
+                 continue;
+               }
+               throw streamError;
+            }
+          }
+        } // end retry loop
+
+        if (!streamSuccess && !res.headersSent) {
+           throw lastError || new AppError(500, 'stream_failed', 'All streaming attempts failed.');
+        } else if (lastError && res.headersSent && !res.writableEnded) {
+            // Already handled via SSE error chunk
         }
 
-        writeAnthropicSse(res, 'content_block_stop', {
-          type: 'content_block_stop',
-          index: 0,
-        });
-        writeAnthropicSse(res, 'message_delta', {
-          type: 'message_delta',
-          delta: { stop_reason: 'end_turn', stop_sequence: null },
-          usage: { output_tokens: 0 },
-        });
-        writeAnthropicSse(res, 'message_stop', { type: 'message_stop' });
-        res.end();
         log('anthropic stream completed', { duration_ms: Date.now() - started });
         trackRequest({
           model,
           inputText: extractTextFromMessages(req.body.messages),
           outputText: '',
-          isError: false,
+          isError: !streamSuccess,
         });
         return;
       }
 
-      // Non-streaming path (or tool calls with stream=true → downgraded)
-      // Build working messages for potential tool-call loops
-      let workingMessagesAnthropic = [...messages];
+      let maxRetries = 3;
+      let lastError = null;
       let anthropicContent = '';
       let anthropicParsedOutput = null;
-      let anthropicToolDepth = 0;
-      const MAX_ANTHROPIC_TOOL_DEPTH = 10;
+      const requestedBackend = process.env.CLI_BACKEND || 'cn';
 
-      while (anthropicToolDepth < MAX_ANTHROPIC_TOOL_DEPTH) {
-        const content = await qoderCli.runQoderCnCli({
-          messages: workingMessagesAnthropic,
-          model,
-          tools,
-          reasoningEffort: requestOptions.reasoningEffort,
-          contextWindow: requestOptions.contextWindow,
-          maxOutputTokens: requestOptions.maxOutputTokens || req.body.max_tokens,
-          signal: controller.signal,
-        });
+      for (let retry = 0; retry < maxRetries; retry++) {
+        if (controller.signal.aborted) break;
 
-        anthropicContent = content;
+        const account = accountsManager.getNextAvailable(requestedBackend);
+        if (!account) {
+           return anthropicError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
+        }
 
-        // Parse the output for tool calls if tools were provided
-        let parsedOutput = null;
-        if (tools) {
-          parsedOutput = parseToolCallOutput(content);
-          if (parsedOutput && parsedOutput.type === 'tool_calls') {
-            log('anthropic tool calls detected', {
-              tool_count: parsedOutput.toolCalls.length,
-              tools: parsedOutput.toolCalls.map((t) => t.name),
+        try {
+          // Non-streaming path (or tool calls with stream=true → downgraded)
+          // Build working messages for potential tool-call loops
+          let workingMessagesAnthropic = [...messages];
+          let anthropicToolDepth = 0;
+          const MAX_ANTHROPIC_TOOL_DEPTH = 10;
+
+          while (anthropicToolDepth < MAX_ANTHROPIC_TOOL_DEPTH) {
+            const content = await qoderCli.runQoderCnCli({
+              messages: workingMessagesAnthropic,
+              model,
+              tools,
+              reasoningEffort: requestOptions.reasoningEffort,
+              contextWindow: requestOptions.contextWindow,
+              maxOutputTokens: requestOptions.maxOutputTokens || req.body.max_tokens,
+              signal: controller.signal,
+              account: account
             });
-          } else {
-            log('anthropic no tool calls detected', { response_type: parsedOutput?.type || 'text' });
+
+            anthropicContent = content;
+
+            // Parse the output for tool calls if tools were provided
+            let parsedOutput = null;
+            if (tools) {
+              parsedOutput = parseToolCallOutput(content);
+              if (parsedOutput && parsedOutput.type === 'tool_calls') {
+                log('anthropic tool calls detected', {
+                  tool_count: parsedOutput.toolCalls.length,
+                  tools: parsedOutput.toolCalls.map((t) => t.name),
+                });
+              } else {
+                log('anthropic no tool calls detected', { response_type: parsedOutput?.type || 'text' });
+              }
+            }
+
+            anthropicParsedOutput = parsedOutput;
+
+            // If no tool calls, we're done
+            if (!parsedOutput || parsedOutput.type !== 'tool_calls') {
+              break;
+            }
+
+            // Default: hand tool_use blocks back to the client, which executes
+            // tools in its own workspace. Server-side execution only when opted in.
+            if (!isServerToolExecutionEnabled()) {
+              break;
+            }
+
+            // Execute tool calls and build tool result messages
+            const toolResults = [];
+            const assistantToolCalls = [];
+
+            for (const toolCall of parsedOutput.toolCalls) {
+              const callId = generateCallId('call_');
+              assistantToolCalls.push({
+                id: callId,
+                type: 'function',
+                function: {
+                  name: toolCall.name,
+                  arguments: JSON.stringify(toolCall.arguments || {}),
+                },
+              });
+
+              log('executing anthropic tool', { name: toolCall.name, arguments: toolCall.arguments });
+              const result = await executeToolCall(toolCall);
+              log('anthropic tool result', { name: toolCall.name, result });
+
+              toolResults.push({
+                role: 'tool',
+                tool_call_id: callId,
+                content: JSON.stringify(result),
+              });
+            }
+
+            // Add assistant message with tool_calls
+            workingMessagesAnthropic.push({
+              role: 'assistant',
+              content: parsedOutput.prefixText || null,
+              tool_calls: assistantToolCalls,
+            });
+
+            // Add tool result messages
+            workingMessagesAnthropic.push(...toolResults);
+
+            anthropicToolDepth++;
           }
+
+          if (anthropicToolDepth >= MAX_ANTHROPIC_TOOL_DEPTH) {
+            log('warning: max anthropic tool call depth reached', { depth: MAX_ANTHROPIC_TOOL_DEPTH });
+          }
+          
+          lastError = null;
+          break; // Success
+
+        } catch (error) {
+             lastError = error;
+             if (error.code === 'rate_limit_exceeded') {
+                 log('Rate limit on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'rate_limit');
+                 continue;
+             } else if (error.code === 'quota_exhausted') {
+                 log('Quota exhausted on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'quota_exhausted');
+                 continue;
+             } else if (error.code === 'auth_error') {
+                 log('Auth error on account, switching...', { account: account.id });
+                 accountsManager.reportError(account.id, 'auth_error');
+                 continue;
+             }
+             // Not a retryable error
+             throw error;
         }
-
-        anthropicParsedOutput = parsedOutput;
-
-        // If no tool calls, we're done
-        if (!parsedOutput || parsedOutput.type !== 'tool_calls') {
-          break;
-        }
-
-        // Default: hand tool_use blocks back to the client, which executes
-        // tools in its own workspace. Server-side execution only when opted in.
-        if (!isServerToolExecutionEnabled()) {
-          break;
-        }
-
-        // Execute tool calls and build tool result messages
-        const toolResults = [];
-        const assistantToolCalls = [];
-
-        for (const toolCall of parsedOutput.toolCalls) {
-          const callId = generateCallId('call_');
-          assistantToolCalls.push({
-            id: callId,
-            type: 'function',
-            function: {
-              name: toolCall.name,
-              arguments: JSON.stringify(toolCall.arguments || {}),
-            },
-          });
-
-          log('executing anthropic tool', { name: toolCall.name, arguments: toolCall.arguments });
-          const result = await executeToolCall(toolCall);
-          log('anthropic tool result', { name: toolCall.name, result });
-
-          toolResults.push({
-            role: 'tool',
-            tool_call_id: callId,
-            content: JSON.stringify(result),
-          });
-        }
-
-        // Add assistant message with tool_calls
-        workingMessagesAnthropic.push({
-          role: 'assistant',
-          content: parsedOutput.prefixText || null,
-          tool_calls: assistantToolCalls,
-        });
-
-        // Add tool result messages
-        workingMessagesAnthropic.push(...toolResults);
-
-        anthropicToolDepth++;
       }
 
-      if (anthropicToolDepth >= MAX_ANTHROPIC_TOOL_DEPTH) {
-        log('warning: max anthropic tool call depth reached', { depth: MAX_ANTHROPIC_TOOL_DEPTH });
-      }
+      if (lastError) throw lastError;
 
       if (req.body.stream) {
         // Buffered request (tools declared) — emit the parsed result as a
@@ -751,7 +987,7 @@ function createApp() {
       } else {
         res.json(createAnthropicMessage({ model, content: anthropicContent, parsedOutput: anthropicParsedOutput }));
       }
-      log('anthropic message request completed', { duration_ms: Date.now() - started, tool_call_depth: anthropicToolDepth });
+      log('anthropic message request completed', { duration_ms: Date.now() - started });
       trackRequest({
         model,
         inputText: extractTextFromMessages(req.body.messages),
@@ -790,6 +1026,123 @@ function createApp() {
 
   app.post('/usage/reset-local', (_req, res) => {
     resetUsage();
+    res.json({ ok: true });
+  });
+
+  // --- Accounts API ---
+  const MASK_CHAR = '*';
+  function maskToken(token) {
+    if (!token) return '';
+    if (token.length <= 12) return MASK_CHAR.repeat(token.length);
+    return token.substring(0, 6) + MASK_CHAR.repeat(token.length - 12) + token.substring(token.length - 6);
+  }
+
+  app.get('/api/accounts', apiKeyGuard, (_req, res) => {
+    const all = accountsManager.getAll();
+    const safeAccounts = all.map(acc => ({
+      ...acc,
+      token: maskToken(acc.token)
+    }));
+    res.json(safeAccounts);
+  });
+
+  app.post('/api/accounts', apiKeyGuard, (req, res) => {
+    const { name, token, backend } = req.body || {};
+    if (!token) {
+      return res.status(400).json({ error: { message: 'Token is required' } });
+    }
+    const acc = accountsManager.add({ name, token, backend });
+    res.json({
+       ...acc,
+       token: maskToken(acc.token)
+    });
+  });
+
+  app.put('/api/accounts/:id', apiKeyGuard, (req, res) => {
+    const id = req.params.id;
+    const { status, name, token } = req.body || {};
+    const updates = {};
+    if (status !== undefined) updates.status = status;
+    if (name !== undefined) updates.name = name;
+    if (token !== undefined && token.indexOf(MASK_CHAR) === -1) updates.token = token; // Only update if it's not a masked string
+
+    if (updates.status === 'active') {
+       updates.rateLimitUntil = null;
+    }
+
+    const acc = accountsManager.update(id, updates);
+    if (!acc) {
+      return res.status(404).json({ error: { message: 'Account not found' } });
+    }
+    res.json({
+       ...acc,
+       token: maskToken(acc.token)
+    });
+  });
+
+  app.delete('/api/accounts/:id', apiKeyGuard, (req, res) => {
+    const id = req.params.id;
+    // We should ideally clean up the home directory if it's a global account, but for simplicity we rely on manual cleanup or keep them.
+    // If you want full cleanup, you could read the account first.
+    const success = accountsManager.remove(id);
+    if (success) {
+      res.json({ ok: true });
+    } else {
+      res.status(404).json({ error: { message: 'Account not found' } });
+    }
+  });
+
+  // --- OAuth Login API ---
+  app.post('/api/accounts/oauth/start', apiKeyGuard, (req, res) => {
+    try {
+      const sessionId = oauthManager.startLoginSession();
+      res.json({ sessionId });
+    } catch (err) {
+      res.status(500).json({ error: { message: err.message } });
+    }
+  });
+
+  app.get('/api/accounts/oauth/status/:id', apiKeyGuard, (req, res) => {
+    const session = oauthManager.getSession(req.params.id);
+    if (!session) {
+      return res.status(404).json({ error: { message: 'Session not found or expired' } });
+    }
+    res.json({
+      status: session.status,
+      loginUrl: session.loginUrl,
+      error: session.error
+    });
+  });
+
+  app.post('/api/accounts/oauth/finish', apiKeyGuard, (req, res) => {
+    const { sessionId, name } = req.body || {};
+    if (!sessionId) {
+      return res.status(400).json({ error: { message: 'sessionId is required' } });
+    }
+
+    const homeDir = oauthManager.finishSession(sessionId);
+    if (!homeDir) {
+      return res.status(400).json({ error: { message: 'Session is not in success state or does not exist' } });
+    }
+
+    // Register as a global account using homeDir as token
+    const acc = accountsManager.add({ 
+      name: name || 'Global Account', 
+      backend: 'global', 
+      token: homeDir 
+    });
+
+    res.json({
+       ...acc,
+       token: maskToken(acc.token)
+    });
+  });
+
+  app.post('/api/accounts/oauth/cancel', apiKeyGuard, (req, res) => {
+    const { sessionId } = req.body || {};
+    if (sessionId) {
+      oauthManager.cancelSession(sessionId);
+    }
     res.json({ ok: true });
   });
 

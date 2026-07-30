@@ -88,10 +88,11 @@ function switchTab(tab) {
   var overlay = document.getElementById('sidebar-overlay');
   if (overlay) overlay.classList.remove('open');
 
-  // Load data
-  if (tab === 'dashboard') loadDashboard();
-  if (tab === 'models') loadModels();
-  if (tab === 'usage') loadUsage();
+    // Load data
+    if (tab === 'dashboard') loadDashboard();
+    if (tab === 'models') loadModels();
+    if (tab === 'accounts') loadAccounts();
+    if (tab === 'usage') loadUsage();
 }
 
 // ─── API helpers ───────────────────────────────────────────────────────────────
@@ -149,46 +150,58 @@ function api(path, options) {
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
 
-function loadDashboard() {
-  var container = document.getElementById('dashboard-content');
-  if (!container || container.dataset.loaded === '1') return;
-  container.innerHTML = '<div class="loading">Loading...</div>';
+  function loadDashboard() {
+    var container = document.getElementById('dashboard-content');
+    if (!container || container.dataset.loaded === '1') return;
+    container.innerHTML = '<div class="loading">Loading...</div>';
+  
+    var pAccounts = api('/api/accounts').catch(function() { return []; });
 
-  Promise.all([api('/'), api('/health'), api('/v1/models')])
-    .then(function (data) {
-      var info = data[0];
-      var models = data[2];
-      var modelCount = models.data ? models.data.length : 0;
-
-      var backendName = info.cli_backend === 'global' ? 'Global (qodercli)' : 'CN (qoderclicn)';
-
-      container.innerHTML =
-        '<div class="stat-grid">' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Status</div>' +
-            '<div class="stat-value success"><span class="status-dot green"></span>Running</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">CLI Backend</div>' +
-            '<div class="stat-value">' + escapeHtml(backendName) + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Models</div>' +
-            '<div class="stat-value">' + modelCount + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Base URL</div>' +
-            '<div class="stat-value muted">127.0.0.1:3000</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="alert info">Local protocol adapter running. Access the Web UI at <code>http://127.0.0.1:3000/ui</code></div>';
-      container.dataset.loaded = '1';
-    })
-    .catch(function (err) {
-      container.innerHTML =
-        '<div class="alert error">Failed to load dashboard: ' + escapeHtml(err.message) + '</div>';
-    });
-}
+    Promise.all([api('/'), api('/health'), api('/v1/models'), pAccounts])
+      .then(function (data) {
+        var info = data[0];
+        var models = data[2];
+        var accounts = data[3] || [];
+        var modelCount = models.data ? models.data.length : 0;
+        
+        var activeAccounts = accounts.filter(function(a) { return a.status === 'active' }).length;
+        var rateLimitedAccounts = accounts.filter(function(a) { return a.status === 'rate_limited' }).length;
+        var totalAccounts = accounts.length;
+  
+        var backendName = info.cli_backend === 'global' ? 'Global (qodercli)' : 'CN (qoderclicn)';
+  
+        container.innerHTML =
+          '<div class="stat-grid">' +
+            '<div class="glass stat-item">' +
+              '<div class="stat-label">Status</div>' +
+              '<div class="stat-value success"><span class="status-dot green"></span>Running</div>' +
+            '</div>' +
+            '<div class="glass stat-item">' +
+              '<div class="stat-label">CLI Backend</div>' +
+              '<div class="stat-value">' + escapeHtml(backendName) + '</div>' +
+            '</div>' +
+            '<div class="glass stat-item">' +
+              '<div class="stat-label">Models</div>' +
+              '<div class="stat-value">' + modelCount + '</div>' +
+            '</div>' +
+            '<div class="glass stat-item">' +
+              '<div class="stat-label">Active / Total Accounts</div>' +
+              '<div class="stat-value">' + activeAccounts + ' / ' + totalAccounts + 
+              (rateLimitedAccounts > 0 ? ' <span style="font-size:0.8em;color:#f59e0b">(' + rateLimitedAccounts + ' rate limited)</span>' : '') +
+              '</div>' +
+            '</div>' +
+            '<div class="glass stat-item">' +
+              '<div class="stat-label">Base URL</div>' +
+              '<div class="stat-value muted">127.0.0.1:3000</div>' +
+            '</div>' +
+          '</div>';
+  
+        container.dataset.loaded = '1';
+      })
+      .catch(function (err) {
+        container.innerHTML = '<div class="alert error">' + err.message + '</div>';
+      });
+  }
 
 // ─── Models ────────────────────────────────────────────────────────────────────
 
@@ -415,7 +428,245 @@ function initConfig() {
   });
 }
 
-// ─── Usage / Credits ─────────────────────────────────────────────────────────
+  // ─── Accounts Management ────────────────────────────────────────────────────────
+
+  function loadAccounts() {
+    var container = document.getElementById('accounts-list');
+    if (!container) return;
+    container.innerHTML = '<div class="loading">Loading accounts...</div>';
+
+    api('/api/accounts')
+      .then(function (accounts) {
+        if (!accounts || accounts.length === 0) {
+          container.innerHTML = '<div class="alert info">No accounts found. Add one above.</div>';
+          return;
+        }
+
+        var rows = accounts.map(function(acc) {
+          var statusClass = 'status-' + acc.status;
+          var statusText = acc.status;
+          if (acc.status === 'rate_limited' && acc.rateLimitUntil) {
+            var msLeft = Math.max(0, acc.rateLimitUntil - Date.now());
+            if (msLeft > 0) {
+              statusText += ' (' + Math.ceil(msLeft/1000) + 's)';
+            }
+          }
+          var toggleAction = acc.status === 'disabled' 
+            ? '<button class="btn primary" onclick="toggleAccount(\'' + acc.id + '\', \'active\')">Enable</button>'
+            : '<button class="btn secondary" onclick="toggleAccount(\'' + acc.id + '\', \'disabled\')">Disable</button>';
+            
+            var tokenDisplay = acc.backend === 'global' ? '(OAuth Profile)' : escapeHtml(acc.token);
+
+            return '<tr>' +
+              '<td>' + escapeHtml(acc.name || acc.id) + '</td>' +
+              '<td>' + escapeHtml(acc.backend) + '</td>' +
+              '<td>' + tokenDisplay + '</td>' +
+              '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
+              '<td class="acc-actions">' +
+                 toggleAction +
+                 '<button class="btn danger" onclick="deleteAccount(\'' + acc.id + '\')">Delete</button>' +
+              '</td>' +
+          '</tr>';
+        }).join('');
+
+        container.innerHTML = 
+          '<div class="table-responsive" style="overflow-x:auto;">' +
+            '<table class="account-table">' +
+              '<thead><tr><th>Name</th><th>Backend</th><th>Token</th><th>Status</th><th>Actions</th></tr></thead>' +
+              '<tbody>' + rows + '</tbody>' +
+            '</table>' +
+          '</div>';
+      })
+      .catch(function(err) {
+        container.innerHTML = '<div class="alert error">' + err.message + '</div>';
+      });
+  }
+
+  window.toggleAccount = function(id, status) {
+    api('/api/accounts/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({ status: status })
+    })
+    .then(loadAccounts)
+    .then(function() {
+       var dEl = document.getElementById('dashboard-content');
+       if(dEl) dEl.dataset.loaded = '0';
+    })
+    .catch(function(err) {
+      alert('Failed to update account: ' + err.message);
+    });
+  };
+
+  window.deleteAccount = function(id) {
+    if (!confirm('Are you sure you want to delete this account?')) return;
+    api('/api/accounts/' + id, { method: 'DELETE' })
+    .then(loadAccounts)
+    .then(function() {
+       var dEl = document.getElementById('dashboard-content');
+       if(dEl) dEl.dataset.loaded = '0';
+    })
+    .catch(function(err) {
+      alert('Failed to delete account: ' + err.message);
+    });
+  };
+
+  function setupAccountsForm() {
+    var btn = document.getElementById('acc-add-btn');
+    var refreshBtn = document.getElementById('acc-refresh');
+    var backendSelect = document.getElementById('acc-backend');
+    var tokenGroup = document.getElementById('acc-token-group');
+    var oauthGroup = document.getElementById('acc-oauth-group');
+    var oauthStatus = document.getElementById('acc-oauth-status');
+
+    var currentOauthPoll = null;
+    var currentOauthSessionId = null;
+
+    if (backendSelect) {
+       backendSelect.addEventListener('change', function() {
+          if (this.value === 'global') {
+             tokenGroup.style.display = 'none';
+             oauthGroup.style.display = 'block';
+             btn.textContent = 'Start OAuth Login';
+             btn.classList.remove('primary');
+             btn.classList.add('warning'); // just a visual cue
+             oauthStatus.style.display = 'none';
+          } else {
+             tokenGroup.style.display = 'flex';
+             oauthGroup.style.display = 'none';
+             btn.textContent = 'Add Account';
+             btn.classList.remove('warning');
+             btn.classList.add('primary');
+             oauthStatus.style.display = 'none';
+          }
+       });
+    }
+
+    function cleanupOauth() {
+       if (currentOauthPoll) clearInterval(currentOauthPoll);
+       currentOauthPoll = null;
+       currentOauthSessionId = null;
+       btn.disabled = false;
+       btn.textContent = 'Start OAuth Login';
+       oauthStatus.style.display = 'none';
+    }
+
+    if (btn) {
+      btn.addEventListener('click', function() {
+        var nameInput = document.getElementById('acc-name');
+        var backendInput = document.getElementById('acc-backend');
+        var tokenInput = document.getElementById('acc-token');
+        var name = nameInput.value.trim();
+        var backend = backendInput.value;
+        
+        if (backend === 'global') {
+           // --- Global OAuth Flow ---
+           if (currentOauthSessionId) {
+              // Cancel existing
+              api('/api/accounts/oauth/cancel', {
+                 method: 'POST', body: JSON.stringify({ sessionId: currentOauthSessionId })
+              }).catch(function(){});
+              cleanupOauth();
+              return;
+           }
+
+           btn.disabled = true;
+           btn.textContent = 'Starting...';
+           oauthStatus.style.display = 'block';
+           oauthStatus.className = 'alert info';
+           oauthStatus.innerHTML = 'Starting login session...';
+
+           api('/api/accounts/oauth/start', { method: 'POST' })
+             .then(function(res) {
+                currentOauthSessionId = res.sessionId;
+                btn.disabled = false;
+                btn.textContent = 'Cancel Login';
+                btn.classList.add('danger');
+
+                currentOauthPoll = setInterval(function() {
+                   api('/api/accounts/oauth/status/' + currentOauthSessionId)
+                     .then(function(statusRes) {
+                        if (statusRes.status === 'waiting_for_user' && statusRes.loginUrl) {
+                           oauthStatus.innerHTML = '<strong>Action Required:</strong> Please open <a href="' + statusRes.loginUrl + '" target="_blank" style="color:var(--accent);text-decoration:underline;">this link</a> in your browser to sign in.';
+                        } else if (statusRes.status === 'success') {
+                           clearInterval(currentOauthPoll);
+                           oauthStatus.innerHTML = 'Login successful! Finalizing...';
+                           
+                           api('/api/accounts/oauth/finish', {
+                              method: 'POST',
+                              body: JSON.stringify({ sessionId: currentOauthSessionId, name: name })
+                           })
+                           .then(function() {
+                              cleanupOauth();
+                              nameInput.value = '';
+                              loadAccounts();
+                              var dEl = document.getElementById('dashboard-content');
+                              if(dEl) dEl.dataset.loaded = '0';
+                           })
+                           .catch(function(err) {
+                              oauthStatus.className = 'alert error';
+                              oauthStatus.innerHTML = 'Failed to save account: ' + err.message;
+                              cleanupOauth();
+                           });
+                        } else if (statusRes.status === 'error') {
+                           clearInterval(currentOauthPoll);
+                           oauthStatus.className = 'alert error';
+                           oauthStatus.innerHTML = 'Login failed: ' + (statusRes.error || 'Unknown error');
+                           setTimeout(cleanupOauth, 3000);
+                        }
+                     })
+                     .catch(function(err) {
+                        // Polling error
+                        clearInterval(currentOauthPoll);
+                        oauthStatus.className = 'alert error';
+                        oauthStatus.innerHTML = 'Connection error: ' + err.message;
+                        setTimeout(cleanupOauth, 3000);
+                     });
+                }, 2000);
+             })
+             .catch(function(err) {
+                oauthStatus.className = 'alert error';
+                oauthStatus.innerHTML = 'Failed to start: ' + err.message;
+                cleanupOauth();
+             });
+
+        } else {
+           // --- CN PAT Flow (Existing) ---
+           var token = tokenInput.value.trim();
+           if (!token) {
+             alert('Token is required.');
+             return;
+           }
+   
+           btn.disabled = true;
+           btn.textContent = 'Adding...';
+   
+           api('/api/accounts', {
+             method: 'POST',
+             body: JSON.stringify({ name: name, backend: backend, token: token })
+           })
+           .then(function() {
+             nameInput.value = '';
+             tokenInput.value = '';
+             loadAccounts();
+             var dEl = document.getElementById('dashboard-content');
+             if(dEl) dEl.dataset.loaded = '0';
+           })
+           .catch(function(err) {
+             alert('Failed to add account: ' + err.message);
+           })
+           .finally(function() {
+             btn.disabled = false;
+             btn.textContent = 'Add Account';
+           });
+        }
+      });
+    }
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', loadAccounts);
+    }
+  }
+
+  // ─── Usage / Credits ─────────────────────────────────────────────────────────
 
 function loadUsage() {
   var container = document.getElementById('usage-content');
@@ -531,6 +782,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initChat();
   initConfig();
   initApiKey();
+  setupAccountsForm();
 
   // Theme toggle
   var themeBtn = document.getElementById('theme-toggle');

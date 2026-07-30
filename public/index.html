@@ -40,8 +40,12 @@
           <span class="nav-label">Chat Test</span>
         </button>
         <button data-tab="config" class="nav-item">
-          <span class="nav-icon">⛭</span>
+          <span class="nav-icon">⚙️</span>
           <span class="nav-label">Config</span>
+        </button>
+        <button data-tab="accounts" class="nav-item">
+          <span class="nav-icon">👥</span>
+          <span class="nav-label">Accounts</span>
         </button>
         <button data-tab="usage" class="nav-item">
           <span class="nav-icon">◐</span>
@@ -118,7 +122,7 @@
         <div id="config-content">
           <div class="glass card">
             <div class="card-header">
-              <span class="card-icon">◬</span>
+              <span class="card-icon">🔑</span>
               <h3>Proxy API Key</h3>
             </div>
             <p class="card-desc">
@@ -143,7 +147,7 @@
           <div class="config-grid">
             <div class="glass card">
               <div class="card-header">
-                <span class="card-icon">◬</span>
+                <span class="card-icon">🔌</span>
                 <h3>OpenAI Compatible</h3>
               </div>
               <p class="card-desc">For clients that support custom OpenAI-compatible endpoints:</p>
@@ -158,7 +162,7 @@
 
             <div class="glass card">
               <div class="card-header">
-                <span class="card-icon">◬</span>
+                <span class="card-icon">🔌</span>
                 <h3>Anthropic Compatible</h3>
               </div>
               <p class="card-desc">For clients that support custom Anthropic-compatible endpoints:</p>
@@ -171,7 +175,7 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
 
             <div class="glass card">
               <div class="card-header">
-                <span class="card-icon">◬</span>
+                <span class="card-icon">💻</span>
                 <h3>OpenCode</h3>
               </div>
               <p class="card-desc">Use with OpenCode CLI:</p>
@@ -179,6 +183,58 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
                 <pre><code id="config-opencode">opencode run --model qoder-cn-local/qwen3.7-max --variant high "reply OK"</code></pre>
                 <button class="btn copy" data-target="config-opencode">Copy</button>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Accounts -->
+      <section id="accounts" class="tab-content">
+        <div class="page-header">
+          <h2>Account Pool</h2>
+          <p class="page-desc">管理本地账号池及限速状态</p>
+        </div>
+        <div id="accounts-content">
+          <div class="glass card form-card">
+            <div class="card-header">
+              <span class="card-icon">➕</span>
+              <h3>Add New Account</h3>
+            </div>
+            <div class="account-form">
+              <div class="form-group">
+                <label>Alias</label>
+                <input type="text" id="acc-name" placeholder="e.g. Personal CN Account" />
+              </div>
+              <div class="form-group">
+                <label>Backend</label>
+                <select id="acc-backend">
+                  <option value="cn">Qoder CN (qoderclicn)</option>
+                  <option value="global">Qoder Global (qodercli)</option>
+                </select>
+              </div>
+              <div class="form-group" id="acc-token-group">
+                <label>Token / PAT</label>
+                <input type="password" id="acc-token" placeholder="Paste Token here" />
+              </div>
+              
+              <!-- OAuth specific UI -->
+              <div id="acc-oauth-group" style="display: none;">
+                 <p class="text-sm" style="color: var(--text-muted); margin-bottom: 0.5rem;">Qoder Global uses OAuth. Clicking the button below will start the login flow.</p>
+                 <div id="acc-oauth-status" class="alert info" style="display:none; font-size: 0.85rem; word-break: break-all;"></div>
+              </div>
+
+              <button class="btn primary" id="acc-add-btn">Add Account</button>
+            </div>
+          </div>
+          
+          <div class="glass card list-card">
+            <div class="card-header">
+              <span class="card-icon">📋</span>
+              <h3>Current Accounts</h3>
+              <button class="btn-icon" id="acc-refresh" title="Refresh">🔄</button>
+            </div>
+            <div id="accounts-list">
+              <div class="loading">Loading accounts...</div>
             </div>
           </div>
         </div>

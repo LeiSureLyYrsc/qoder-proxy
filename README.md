@@ -27,6 +27,8 @@
 
 `qoderclicn` 和 `qodercli` 都是命令行工具，接受文本输入并返回文本输出。许多本地客户端或开发工具使用 OpenAI 或 Anthropic 格式的 HTTP API。本项目作为本地适配层：接收兼容格式请求，将其转换为 CLI 调用，再把 CLI 输出整理为兼容格式响应。
 
+本项目内置**账号池(Account Pool)**管理，能够存放多个不同后端的 Token，当遇到配额耗尽或限速(Rate Limit)时，请求会自动重试并切换到下一个可用账号。
+
 支持两种本地协议格式：
 
 - **OpenAI 兼容格式**：`/v1/chat/completions`
@@ -70,12 +72,13 @@ x-api-key: <PROXY_API_KEY>
 
 如果你有本机 Web 应用需要从浏览器调用代理，用 `ALLOWED_ORIGINS` 显式放行；如果你确实要用别的主机名访问，用 `ALLOWED_HOSTS`。这两个开关默认为空——一旦使用，安全模型就需要你自己评估了。
 
-### 上游认证方式
+### 上游认证与账号池
 
-| 后端 | 认证方式 | 环境变量 |
-|------|--------|--------|
-| CN (`qoderclicn`) | Personal Access Token | `QODERCN_PERSONAL_ACCESS_TOKEN` |
-| Global (`qodercli`) | OAuth 登录（`qodercli login`） | 无需配置 |
+不再需要在 `.env` 中单设 Token。系统提供了一个支持多账号自动轮询、自动剔除/恢复限速账号的**号池管理器**。
+
+启动服务后，打开本地控制台 `http://127.0.0.1:3000/ui/`，在 **Accounts** 标签页添加您的 Qoder CN 或 Global 账号 Token。
+
+代理在处理请求时，会自动从中挑出一个可用账号。当某个账号触发 `429 Too Many Requests` 限速，会临时冻结1分钟；当配额耗尽则永久标记为 Exhausted，代理会自动用池中的下一个账号为您重试请求。
 
 ### 服务端工具执行（默认关闭）
 
@@ -138,20 +141,11 @@ Copy-Item .env.example .env
 编辑 `.env`，配置后端和认证：
 
 ```env
-# 选择后端: "cn" 或 "global"
+# 选择首选后端: "cn" 或 "global"
 CLI_BACKEND=cn
-
-# CN 后端：填入你的 Personal Access Token
-QODERCN_PERSONAL_ACCESS_TOKEN=your-cn-token
-
-# Global 后端：运行 qodercli login 后无需配置令牌
 ```
 
-CN 版 PAT 创建入口：https://qoder.com.cn/account/integrations
-
-创建后请妥善保存。不要将 `.env` 提交到 Git，也不要把 Token 填入第三方客户端或分享给他人。
-
-启动：
+然后启动：
 
 ```powershell
 npm start
@@ -165,25 +159,20 @@ Windows 也可以双击 `start-proxy.cmd`。
 http://127.0.0.1:3000
 ```
 
+启动后，访问本地控制台 **http://127.0.0.1:3000/ui/** 在 **Accounts** 里录入您的账号（Tokens）。
+
 如果你通过环境变量或代码改动手动设置 host，请保持 `127.0.0.1`。不要绑定 `0.0.0.0`，不要通过端口映射、反向代理、隧道或云服务器暴露给公网。
 
 ## 双后端切换
 
-通过 `.env` 中的 `CLI_BACKEND` 切换后端：
+可以在 `.env` 中的 `CLI_BACKEND` 配置默认需要使用哪个后端的账号：
 
 ```env
-CLI_BACKEND=cn       # 使用 qoderclicn
-CLI_BACKEND=global   # 使用 qodercli
+CLI_BACKEND=cn       # 默认挑选 qoderclicn 账号
+CLI_BACKEND=global   # 默认挑选 qodercli 账号
 ```
 
-| 配置项 | CN 后端 | Global 后端 |
-|---------|--------|----------|
-| CLI 命令 | `qoderclicn` | `qodercli` |
-| 认证方式 | Personal Access Token | `qodercli login`（OAuth） |
-| 认证目录 | `~/.qoderworkcn` | `~/.qoder` |
-| 环境变量 | `QODERCN_PERSONAL_ACCESS_TOKEN` | 不需要（登录后自动认证） |
-
-切换后端后需重启代理服务生效。
+你也可以不改此配置，直接在请求头里的 providerOptions 指定。
 
 ## 支持的模型
 
@@ -297,10 +286,11 @@ http://127.0.0.1:3000/ui
 
 | Tab | 说明 |
 |-----|------|
-| Dashboard | 显示 /health 状态、Base URL、模型数量、安全状态 |
+| Dashboard | 显示 /health 状态、Base URL、模型数量、安全状态、账号池统计 |
 | Models | 调用 /v1/models 显示模型列表 |
 | Chat Test | 用 /v1/chat/completions 做简单非流式测试 |
 | Config | 生成 OpenAI Compatible / Anthropic Compatible / OpenCode 配置示例 |
+| Accounts | 管理账号池，添加/移除账号，查看各账号是否健康或被限速 |
 | Usage / Credits | 本地用量统计 |
 
 ### 本地用量统计说明
