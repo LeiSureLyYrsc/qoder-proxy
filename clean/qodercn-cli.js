@@ -329,8 +329,9 @@ function buildSpawnCommand(command, args, backend) {
         args: [bundle, ...args],
       };
     }
+    const comSpec = process.env.ComSpec;
     return {
-      command: process.env.ComSpec || 'cmd.exe',
+      command: /cmd\.exe$/i.test(comSpec || '') ? comSpec : 'cmd.exe',
       args: ['/d', '/s', '/c', command, ...args],
     };
   }
