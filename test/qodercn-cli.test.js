@@ -42,6 +42,33 @@ test('rejects unstructured text output', () => {
   assert.throws(() => extractAssistantContent('Thinking...\nOK'), /structured JSON/);
 });
 
+test('maps Global JSON credit errors to quota exhaustion', () => {
+  const output = JSON.stringify({
+    type: 'result',
+    is_error: true,
+    error_code: 118,
+    errors: ["You've reached your credit usage limit."],
+  });
+
+  assert.throws(
+    () => extractAssistantContent(output, { id: 'global-1', name: 'Global 1' }),
+    (error) => error.code === 'quota_exhausted' && error.status === 402
+  );
+});
+
+test('maps Global JSON rate-limit errors to temporary rate limiting', () => {
+  const output = JSON.stringify({
+    type: 'result',
+    is_error: true,
+    errors: ['429 Too Many Requests'],
+  });
+
+  assert.throws(
+    () => extractAssistantContent(output, { id: 'global-1' }),
+    (error) => error.code === 'rate_limit_exceeded' && error.status === 429
+  );
+});
+
 test('builds qoderclicn print-mode args without unsupported flags', () => {
   const args = buildCliArgs({ prompt: 'hello', model: 'auto' });
 

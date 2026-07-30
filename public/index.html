@@ -206,7 +206,7 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
                 <input type="text" id="acc-name" placeholder="e.g. Personal CN Account" />
               </div>
               <div class="form-group">
-                <label>Backend</label>
+                <label>Authentication Channel</label>
                 <select id="acc-backend">
                   <option value="cn">Qoder CN (qoderclicn)</option>
                   <option value="global">Qoder Global (qodercli)</option>
@@ -222,6 +222,16 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
                  <p class="text-sm" style="color: var(--text-muted); margin-bottom: 0.5rem;">Qoder Global uses OAuth. Clicking the button below will start the login flow.</p>
                  <div id="acc-oauth-status" class="alert info" style="display:none; font-size: 0.85rem; word-break: break-all;"></div>
               </div>
+
+              <label id="acc-non-pro-group" class="account-checkbox" style="display: none;">
+                <input type="checkbox" id="acc-non-pro" />
+                <span>Non-Pro account (Ultimate only)</span>
+              </label>
+
+              <label id="acc-shared-models-group" class="account-checkbox" style="display: none;">
+                <input type="checkbox" id="acc-shared-models" checked />
+                <span>Allow CN/Global shared models</span>
+              </label>
 
               <button class="btn primary" id="acc-add-btn">Add Account</button>
             </div>

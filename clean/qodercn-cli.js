@@ -18,16 +18,15 @@ const ATTACHMENT_INSTRUCTION =
  *   - "cn"     → qoderclicn  (Qoder CN, auth in .qoderworkcn)
  *   - "global" → qodercli    (Qoder international, auth in .qoder)
  *
- * The backend is selected via CLI_BACKEND env var (default: "cn").
- * Individual fields can be overridden with CLI_COMMAND and CLI_TOKEN.
+ * The account selected for a model determines the backend.
  */
 function getCliBackend(backendName) {
-  const backend = (backendName || process.env.CLI_BACKEND || 'cn').toLowerCase();
+  const backend = String(backendName || 'cn').toLowerCase();
 
   if (backend === 'global') {
     return {
       name: 'global',
-      command: process.env.CLI_COMMAND || 'qodercli',
+      command: process.env.QODER_CLI_PATH || 'qodercli',
       bundlePackage: '@qoder-ai/qodercli',
       bundlePath: path.join('bundle', 'qodercli.js'),
       homeDir: path.join(process.env.USERPROFILE || process.env.HOME || '~', '.qoder'),
@@ -37,7 +36,7 @@ function getCliBackend(backendName) {
   // Default: cn
   return {
     name: 'cn',
-    command: process.env.CLI_COMMAND || 'qoderclicn',
+    command: process.env.QODERCN_CLI_PATH || 'qoderclicn',
     bundlePackage: '@qodercn-ai/qoderclicn',
     bundlePath: path.join('bundle', 'qoderclicn.js'),
     homeDir: path.join(process.env.USERPROFILE || process.env.HOME || '~', '.qoderworkcn'),
@@ -187,7 +186,30 @@ function extractText(record) {
   return '';
 }
 
-function extractAssistantContent(stdout) {
+function checkJsonError(record, account) {
+  if (record && record.is_error === true && Array.isArray(record.errors)) {
+    const errorStr = record.errors.join(' ').toLowerCase();
+    if (errorStr.includes('429') || errorStr.includes('rate limit') || errorStr.includes('too many requests')) {
+      throw new AppError(429, 'rate_limit_exceeded', `Rate limit exceeded for account ${account?.name || account?.id || 'unknown'}.`);
+    }
+    if (
+      record.error_code === 118 ||
+      errorStr.includes('quota') ||
+      errorStr.includes('credit usage limit') ||
+      errorStr.includes('usage limit') ||
+      errorStr.includes('insufficient') ||
+      errorStr.includes('payment required')
+    ) {
+      throw new AppError(402, 'quota_exhausted', `Quota exhausted for account ${account?.name || account?.id || 'unknown'}.`);
+    }
+    if (errorStr.includes('unauthorized') || errorStr.includes('invalid token') || errorStr.includes('auth')) {
+      throw new AppError(401, 'auth_error', `Authentication error for account ${account?.name || account?.id || 'unknown'}.`);
+    }
+    throw new AppError(502, 'upstream_error', `CLI error: ${record.errors.join(', ')}`);
+  }
+}
+
+function extractAssistantContent(stdout, account) {
   const records = parseMaybeJsonLines(stdout);
   if (!records.length) {
     throw new AppError(
@@ -195,6 +217,11 @@ function extractAssistantContent(stdout) {
       'invalid_upstream_output',
       'Qoder CN CLI did not return structured JSON output.'
     );
+  }
+
+  // Check for inline JSON errors
+  for (const record of records) {
+    checkJsonError(record, account);
   }
 
   for (let i = records.length - 1; i >= 0; i -= 1) {
@@ -428,8 +455,8 @@ function runQoderCnCli({
     .join('\n\n');
 
   const hasSystemToolPrompt = systemMessages.some((m) => /\[Tool Protocol\]/.test(normalizeContent(m.content)));
-  const command = resolveCliCommand(process.env.CLI_COMMAND || process.env.QODERCN_CLI_PATH || backend.command);
-  const modelRoute = resolveModelRoute(model);
+  const command = resolveCliCommand(backend.command);
+  const modelRoute = resolveModelRoute(model, backend.name);
   const cliModel = modelRoute.cliModel;
   // Build prompt with non-system messages only (system prompt goes via CLI flag)
   const prompt = buildPrompt(nonSystemMessages, tools, hasSystemToolPrompt);
@@ -547,10 +574,10 @@ function runQoderCnCli({
         return;
       }
 
-      try {
-        const stdout = Buffer.concat(stdoutChunks).toString('utf8');
-        finish(resolve, extractAssistantContent(stdout));
-      } catch (error) {
+        try {
+          const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+          finish(resolve, extractAssistantContent(stdout, account));
+        } catch (error) {
         finish(reject, error);
       }
     });
@@ -614,8 +641,8 @@ function runQoderCnCliStream({
     .join('\n\n');
 
   const hasSystemToolPrompt = systemMessages.some((m) => /\[Tool Protocol\]/.test(normalizeContent(m.content)));
-  const command = resolveCliCommand(process.env.CLI_COMMAND || process.env.QODERCN_CLI_PATH || backend.command);
-  const modelRoute = resolveModelRoute(model);
+  const command = resolveCliCommand(backend.command);
+  const modelRoute = resolveModelRoute(model, backend.name);
   const cliModel = modelRoute.cliModel;
   const prompt = buildPrompt(nonSystemMessages, tools, hasSystemToolPrompt);
   const timeoutMs = Number(process.env.QODERCN_TIMEOUT_MS || DEFAULT_TIMEOUT_MS);
@@ -710,16 +737,25 @@ function runQoderCnCliStream({
         const trimmed = line.trim();
         if (!trimmed) continue;
 
+        let record;
         try {
-          const record = JSON.parse(trimmed);
-          parsedRecords.push(record);
-          const delta = extractStreamDelta(record);
-          if (delta) {
-            fullTextParts.push(delta);
-            onDelta(delta);
-          }
+          record = JSON.parse(trimmed);
         } catch (_) {
-          // Non-JSON line — skip silently (status messages, ANSI, etc.)
+          continue;
+        }
+
+        parsedRecords.push(record);
+        try {
+          checkJsonError(record, account);
+        } catch (error) {
+          child.kill();
+          finish(reject, error);
+          return;
+        }
+        const delta = extractStreamDelta(record);
+        if (delta) {
+          fullTextParts.push(delta);
+          onDelta(delta);
         }
       }
     });
@@ -739,13 +775,18 @@ function runQoderCnCliStream({
         try {
           const record = JSON.parse(lineBuffer.trim());
           parsedRecords.push(record);
+          checkJsonError(record, account);
           const delta = extractStreamDelta(record);
           if (delta) {
             fullTextParts.push(delta);
             onDelta(delta);
           }
-        } catch (_) {
-          // Ignore
+        } catch (error) {
+          if (error instanceof AppError) {
+            finish(reject, error);
+            return;
+          }
+          // Ignore an incomplete final JSON line.
         }
       }
 

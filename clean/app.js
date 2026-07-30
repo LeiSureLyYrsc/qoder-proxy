@@ -6,7 +6,7 @@ const { anthropicError, openAiError, AppError } = require('./errors');
 const { apiKeyGuard, isAllowedOrigin, localOnlyGuard } = require('./auth');
 const { log } = require('./logger');
 const qoderCli = require('./qodercn-cli');
-const { DEFAULT_MODEL_ID, MODELS } = require('./models');
+const { DEFAULT_MODEL_ID, MODELS, getModel, resolveModelRoute } = require('./models');
 const {
   anthropicToOpenAiMessages,
   createAnthropicMessage,
@@ -282,7 +282,6 @@ function createApp() {
   });
 
   app.get('/', (_req, res) => {
-    const backend = qoderCli.getCliBackend();
     // Deliberately no filesystem paths here: this route is reachable by the
     // local web console, and cli_home leaks the OS username. The paths are
     // printed to the server's own startup log instead.
@@ -290,7 +289,6 @@ function createApp() {
       ok: true,
       name: 'qoder-proxy',
       mode: 'clean',
-      cli_backend: backend.name,
     });
   });
 
@@ -311,6 +309,7 @@ function createApp() {
         capabilities: {
           reasoning: model.reasoning || false,
         },
+        backends: model.backends,
         ...(model.effortAlias ? { effort_alias: true } : {}),
       })),
     });
@@ -324,6 +323,9 @@ function createApp() {
     try {
       validateChatRequest(req.body);
       const model = req.body.model || MODEL_ID;
+      const modelRoute = resolveModelRoute(model);
+      const requestedModel = getModel(modelRoute.baseModelId);
+      const allowedBackends = requestedModel?.backends || ['cn', 'global'];
       const requestOptions = extractRequestOptions(req.body);
       const tools = Array.isArray(req.body.tools) ? req.body.tools : null;
       const normalizedTools = tools ? normalizeOpenAiTools(tools) : null;
@@ -342,13 +344,11 @@ function createApp() {
       if (req.body.stream && !normalizedTools) {
         let streamSuccess = false;
         let lastError = null;
-        const maxRetries = 3;
-        const requestedBackend = process.env.CLI_BACKEND || 'cn';
-        
+        const maxRetries = Math.max(1, accountsManager.countAvailable(modelRoute.baseModelId, allowedBackends));
         for (let retry = 0; retry < maxRetries; retry++) {
           if (controller.signal.aborted) break;
           
-          const account = accountsManager.getNextAvailable(requestedBackend);
+          const account = accountsManager.getNextAvailable(modelRoute.baseModelId, allowedBackends);
           if (!account) {
             if (!res.headersSent) {
               return openAiError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
@@ -493,16 +493,14 @@ function createApp() {
         return;
       }
 
-      let maxRetries = 3;
+      const maxRetries = Math.max(1, accountsManager.countAvailable(modelRoute.baseModelId, allowedBackends));
       let lastError = null;
       let finalContent = '';
       let finalParsedOutput = null;
-      const requestedBackend = process.env.CLI_BACKEND || 'cn';
-
       for (let retry = 0; retry < maxRetries; retry++) {
          if (controller.signal.aborted) break;
 
-         const account = accountsManager.getNextAvailable(requestedBackend);
+         const account = accountsManager.getNextAvailable(modelRoute.baseModelId, allowedBackends);
          if (!account) {
            return openAiError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
          }
@@ -663,6 +661,9 @@ function createApp() {
     try {
       validateAnthropicMessagesRequest(req.body);
       const model = req.body.model || MODEL_ID;
+      const modelRoute = resolveModelRoute(model);
+      const requestedModel = getModel(modelRoute.baseModelId);
+      const allowedBackends = requestedModel?.backends || ['cn', 'global'];
       const requestOptions = extractRequestOptions(req.body);
       const { messages, tools } = anthropicToOpenAiMessages(req.body);
       log('anthropic message request accepted', {
@@ -680,13 +681,11 @@ function createApp() {
       if (req.body.stream && !(tools && tools.length)) {
         let streamSuccess = false;
         let lastError = null;
-        const maxRetries = 3;
-        const requestedBackend = process.env.CLI_BACKEND || 'cn';
-
+        const maxRetries = Math.max(1, accountsManager.countAvailable(modelRoute.baseModelId, allowedBackends));
         for (let retry = 0; retry < maxRetries; retry++) {
           if (controller.signal.aborted) break;
 
-          const account = accountsManager.getNextAvailable(requestedBackend);
+          const account = accountsManager.getNextAvailable(modelRoute.baseModelId, allowedBackends);
           if (!account) {
             if (!res.headersSent) {
               return anthropicError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
@@ -850,16 +849,14 @@ function createApp() {
         return;
       }
 
-      let maxRetries = 3;
+      const maxRetries = Math.max(1, accountsManager.countAvailable(modelRoute.baseModelId, allowedBackends));
       let lastError = null;
       let anthropicContent = '';
       let anthropicParsedOutput = null;
-      const requestedBackend = process.env.CLI_BACKEND || 'cn';
-
       for (let retry = 0; retry < maxRetries; retry++) {
         if (controller.signal.aborted) break;
 
-        const account = accountsManager.getNextAvailable(requestedBackend);
+        const account = accountsManager.getNextAvailable(modelRoute.baseModelId, allowedBackends);
         if (!account) {
            return anthropicError(res, new AppError(500, 'no_account_available', 'No active account available in the pool.'));
         }
@@ -1047,11 +1044,20 @@ function createApp() {
   });
 
   app.post('/api/accounts', apiKeyGuard, (req, res) => {
-    const { name, token, backend } = req.body || {};
+    const { name, token, backend, isNonPro, allowSharedModels } = req.body || {};
     if (!token) {
       return res.status(400).json({ error: { message: 'Token is required' } });
     }
-    const acc = accountsManager.add({ name, token, backend });
+    if (backend !== 'cn') {
+      return res.status(400).json({ error: { message: 'Global accounts must use OAuth login.' } });
+    }
+    const acc = accountsManager.add({
+      name,
+      token,
+      backend,
+      isNonPro: Boolean(isNonPro),
+      allowSharedModels: allowSharedModels !== false,
+    });
     res.json({
        ...acc,
        token: maskToken(acc.token)
@@ -1060,10 +1066,12 @@ function createApp() {
 
   app.put('/api/accounts/:id', apiKeyGuard, (req, res) => {
     const id = req.params.id;
-    const { status, name, token } = req.body || {};
+    const { status, name, token, isNonPro, allowSharedModels } = req.body || {};
     const updates = {};
     if (status !== undefined) updates.status = status;
     if (name !== undefined) updates.name = name;
+    if (isNonPro !== undefined) updates.isNonPro = Boolean(isNonPro);
+    if (allowSharedModels !== undefined) updates.allowSharedModels = Boolean(allowSharedModels);
     if (token !== undefined && token.indexOf(MASK_CHAR) === -1) updates.token = token; // Only update if it's not a masked string
 
     if (updates.status === 'active') {
@@ -1082,8 +1090,6 @@ function createApp() {
 
   app.delete('/api/accounts/:id', apiKeyGuard, (req, res) => {
     const id = req.params.id;
-    // We should ideally clean up the home directory if it's a global account, but for simplicity we rely on manual cleanup or keep them.
-    // If you want full cleanup, you could read the account first.
     const success = accountsManager.remove(id);
     if (success) {
       res.json({ ok: true });
@@ -1115,7 +1121,7 @@ function createApp() {
   });
 
   app.post('/api/accounts/oauth/finish', apiKeyGuard, (req, res) => {
-    const { sessionId, name } = req.body || {};
+    const { sessionId, name, isNonPro, allowSharedModels } = req.body || {};
     if (!sessionId) {
       return res.status(400).json({ error: { message: 'sessionId is required' } });
     }
@@ -1129,7 +1135,9 @@ function createApp() {
     const acc = accountsManager.add({ 
       name: name || 'Global Account', 
       backend: 'global', 
-      token: homeDir 
+      token: homeDir,
+      isNonPro: Boolean(isNonPro),
+      allowSharedModels: allowSharedModels !== false,
     });
 
     res.json({

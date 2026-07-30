@@ -152,22 +152,6 @@ npm install
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and configure the backend and authentication:
-
-```env
-# Choose backend: "cn" or "global"
-CLI_BACKEND=cn
-
-# CN backend: your Personal Access Token
-QODERCN_PERSONAL_ACCESS_TOKEN=your-cn-token
-
-# Global backend: no token needed after running qodercli login
-```
-
-CN PAT page: https://qoder.com.cn/account/integrations
-
-Store it securely. Do not commit `.env` to Git, and do not enter your Token into third-party clients or share it with others.
-
 Start:
 
 ```powershell
@@ -184,9 +168,15 @@ http://127.0.0.1:3000
 
 If you manually change host behavior through environment variables or code edits, keep it bound to `127.0.0.1`. Do not bind to `0.0.0.0`, and do not expose it through port forwarding, reverse proxies, tunnels, or cloud servers.
 
+After startup, open **http://127.0.0.1:3000/ui/**. Add CN accounts with an Access Token, or complete OAuth login for Global accounts.
+
 ## Supported Models
 
-`qoder-cn`, `auto`, `qwen3.8-max-preview`, `qwen3.7-max`, `qwen3.7-plus`, `glm-5.2`, `kimi-k2.7-code`, `minimax-m2.7`, `qwen3.6-flash`, `deepseek-v4-pro`, `deepseek-v4-flash`
+Global only: `ultimate`, `performance`, `efficient`, `lite`, `cantus`, `kimi-k3`, `minimax-m3`
+
+CN only: `qoder-cn`, `minimax-m2.7`, `qwen3.6-flash`
+
+Both channels: `auto`, `qwen3.8-max-preview`, `qwen3.7-max`, `qwen3.7-plus`, `glm-5.2`, `kimi-k2.7-code`, `deepseek-v4-pro`, `deepseek-v4-flash`
 
 Reasoning effort aliases: `qwen3.8-max-preview-effort-low`, `-medium`, `-high`, `-max`, and `qwen3.7-max-effort-low`, `-medium`, `-high`, `-max`
 
@@ -203,23 +193,13 @@ For local clients that support custom OpenAI-compatible endpoints:
 
 Do not enter your Qoder Token into the client. Keep the Token only in this project's local `.env`.
 
-## Dual Backend Switching
+## Model Routing
 
-Switch backends via `CLI_BACKEND` in `.env`:
+There is no global backend switch. Each model declares whether it supports CN, Global, or both. The proxy selects a compatible account and invokes the matching CLI automatically.
 
-```env
-CLI_BACKEND=cn       # use qoderclicn
-CLI_BACKEND=global   # use qodercli
-```
+Global Non-Pro accounts are restricted to `ultimate`; mark those accounts as **Non-Pro account (Ultimate only)** in the WebUI.
 
-| Setting | CN Backend | Global Backend |
-|---------|------------|---------------|
-| CLI command | `qoderclicn` | `qodercli` |
-| Auth method | Personal Access Token | `qodercli login` (OAuth) |
-| Auth directory | `~/.qoderworkcn` | `~/.qoder` |
-| Environment variable | `QODERCN_PERSONAL_ACCESS_TOKEN` | Not required (auto-auth after login) |
-
-Restart the proxy after switching backends.
+Global Pro accounts can disable **Allow CN/Global shared models** individually. When disabled, the account can still serve Global-only models but is excluded from models shared with CN. Existing accounts default to shared routing enabled.
 
 ### Anthropic-Compatible Interface
 

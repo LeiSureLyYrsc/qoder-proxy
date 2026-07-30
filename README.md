@@ -138,13 +138,6 @@ npm install
 Copy-Item .env.example .env
 ```
 
-编辑 `.env`，配置后端和认证：
-
-```env
-# 选择首选后端: "cn" 或 "global"
-CLI_BACKEND=cn
-```
-
 然后启动：
 
 ```powershell
@@ -159,24 +152,25 @@ Windows 也可以双击 `start-proxy.cmd`。
 http://127.0.0.1:3000
 ```
 
-启动后，访问本地控制台 **http://127.0.0.1:3000/ui/** 在 **Accounts** 里录入您的账号（Tokens）。
+启动后，访问本地控制台 **http://127.0.0.1:3000/ui/**，在 **Accounts** 中为 CN 账号录入 Access Token，或为 Global 账号完成 OAuth 登录。
 
 如果你通过环境变量或代码改动手动设置 host，请保持 `127.0.0.1`。不要绑定 `0.0.0.0`，不要通过端口映射、反向代理、隧道或云服务器暴露给公网。
 
-## 双后端切换
+## 模型路由
 
-可以在 `.env` 中的 `CLI_BACKEND` 配置默认需要使用哪个后端的账号：
+不再通过全局 Backend 开关选 CLI。每个模型都带有 `cn` / `global` 支持标记，代理会根据请求模型从兼容账号中选取账号，并调用对应的 `qoderclicn` 或 `qodercli`。
 
-```env
-CLI_BACKEND=cn       # 默认挑选 qoderclicn 账号
-CLI_BACKEND=global   # 默认挑选 qodercli 账号
-```
+Global Non-Pro 账号只能处理 `ultimate`；请在 WebUI 中为这类账号启用 **Non-Pro account (Ultimate only)** 标记。
 
-你也可以不改此配置，直接在请求头里的 providerOptions 指定。
+Global Pro 账号可单独关闭 **Allow CN/Global shared models**。关闭后，该账号仍可处理 Global 专属模型，但不会参与 CN / Global 同名模型的调度。旧账号默认允许混用。
 
 ## 支持的模型
 
-`qoder-cn`、`auto`、`qwen3.8-max-preview`、`qwen3.7-max`、`qwen3.7-plus`、`glm-5.2`、`kimi-k2.7-code`、`minimax-m2.7`、`qwen3.6-flash`、`deepseek-v4-pro`、`deepseek-v4-flash`
+Global 专属：`ultimate`、`performance`、`efficient`、`lite`、`cantus`、`kimi-k3`、`minimax-m3`
+
+CN 专属：`qoder-cn`、`minimax-m2.7`、`qwen3.6-flash`
+
+双渠道：`auto`、`qwen3.8-max-preview`、`qwen3.7-max`、`qwen3.7-plus`、`glm-5.2`、`kimi-k2.7-code`、`deepseek-v4-pro`、`deepseek-v4-flash`
 
 推理强度别名：`qwen3.8-max-preview-effort-low`、`-medium`、`-high`、`-max`，以及 `qwen3.7-max-effort-low`、`-medium`、`-high`、`-max`
 

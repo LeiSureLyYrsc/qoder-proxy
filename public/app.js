@@ -166,9 +166,9 @@ function api(path, options) {
         
         var activeAccounts = accounts.filter(function(a) { return a.status === 'active' }).length;
         var rateLimitedAccounts = accounts.filter(function(a) { return a.status === 'rate_limited' }).length;
+        var cnAccounts = accounts.filter(function(a) { return a.backend === 'cn' }).length;
+        var globalAccounts = accounts.filter(function(a) { return a.backend === 'global' }).length;
         var totalAccounts = accounts.length;
-  
-        var backendName = info.cli_backend === 'global' ? 'Global (qodercli)' : 'CN (qoderclicn)';
   
         container.innerHTML =
           '<div class="stat-grid">' +
@@ -177,8 +177,8 @@ function api(path, options) {
               '<div class="stat-value success"><span class="status-dot green"></span>Running</div>' +
             '</div>' +
             '<div class="glass stat-item">' +
-              '<div class="stat-label">CLI Backend</div>' +
-              '<div class="stat-value">' + escapeHtml(backendName) + '</div>' +
+              '<div class="stat-label">Account Channels</div>' +
+              '<div class="stat-value">CN ' + cnAccounts + ' / Global ' + globalAccounts + '</div>' +
             '</div>' +
             '<div class="glass stat-item">' +
               '<div class="stat-label">Models</div>' +
@@ -454,16 +454,33 @@ function initConfig() {
           var toggleAction = acc.status === 'disabled' 
             ? '<button class="btn primary" onclick="toggleAccount(\'' + acc.id + '\', \'active\')">Enable</button>'
             : '<button class="btn secondary" onclick="toggleAccount(\'' + acc.id + '\', \'disabled\')">Disable</button>';
+          var tierAction = acc.backend === 'global'
+            ? '<button class="btn secondary" onclick="toggleNonPro(\'' + acc.id + '\', ' + (!acc.isNonPro) + ')">' +
+                (acc.isNonPro ? 'Mark Pro' : 'Mark Non-Pro') +
+              '</button>'
+            : '';
+          var allowsSharedModels = acc.allowSharedModels !== false;
+          var sharedModelsAction = acc.backend === 'global'
+            ? '<button class="btn secondary" onclick="toggleSharedModels(\'' + acc.id + '\', ' + (!allowsSharedModels) + ')">' +
+                (allowsSharedModels ? 'Disable Shared' : 'Enable Shared') +
+              '</button>'
+            : '';
             
             var tokenDisplay = acc.backend === 'global' ? '(OAuth Profile)' : escapeHtml(acc.token);
+            var accountType = acc.backend === 'global'
+              ? (acc.isNonPro ? 'Global Non-Pro' : 'Global Pro') +
+                (allowsSharedModels ? ' / Shared On' : ' / Shared Off')
+              : 'CN Access Token';
 
             return '<tr>' +
               '<td>' + escapeHtml(acc.name || acc.id) + '</td>' +
-              '<td>' + escapeHtml(acc.backend) + '</td>' +
+              '<td>' + accountType + '</td>' +
               '<td>' + tokenDisplay + '</td>' +
               '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>' +
               '<td class="acc-actions">' +
                  toggleAction +
+                 tierAction +
+                 sharedModelsAction +
                  '<button class="btn danger" onclick="deleteAccount(\'' + acc.id + '\')">Delete</button>' +
               '</td>' +
           '</tr>';
@@ -472,7 +489,7 @@ function initConfig() {
         container.innerHTML = 
           '<div class="table-responsive" style="overflow-x:auto;">' +
             '<table class="account-table">' +
-              '<thead><tr><th>Name</th><th>Backend</th><th>Token</th><th>Status</th><th>Actions</th></tr></thead>' +
+              '<thead><tr><th>Name</th><th>Account Type</th><th>Credential</th><th>Status</th><th>Actions</th></tr></thead>' +
               '<tbody>' + rows + '</tbody>' +
             '</table>' +
           '</div>';
@@ -497,6 +514,24 @@ function initConfig() {
     });
   };
 
+  window.toggleNonPro = function(id, isNonPro) {
+    api('/api/accounts/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({ isNonPro: isNonPro })
+    }).then(loadAccounts).catch(function(err) {
+      alert('Failed to update account tier: ' + err.message);
+    });
+  };
+
+  window.toggleSharedModels = function(id, allowSharedModels) {
+    api('/api/accounts/' + id, {
+      method: 'PUT',
+      body: JSON.stringify({ allowSharedModels: allowSharedModels })
+    }).then(loadAccounts).catch(function(err) {
+      alert('Failed to update shared model access: ' + err.message);
+    });
+  };
+
   window.deleteAccount = function(id) {
     if (!confirm('Are you sure you want to delete this account?')) return;
     api('/api/accounts/' + id, { method: 'DELETE' })
@@ -517,6 +552,10 @@ function initConfig() {
     var tokenGroup = document.getElementById('acc-token-group');
     var oauthGroup = document.getElementById('acc-oauth-group');
     var oauthStatus = document.getElementById('acc-oauth-status');
+    var nonProGroup = document.getElementById('acc-non-pro-group');
+    var nonProInput = document.getElementById('acc-non-pro');
+    var sharedModelsGroup = document.getElementById('acc-shared-models-group');
+    var sharedModelsInput = document.getElementById('acc-shared-models');
 
     var currentOauthPoll = null;
     var currentOauthSessionId = null;
@@ -526,6 +565,8 @@ function initConfig() {
           if (this.value === 'global') {
              tokenGroup.style.display = 'none';
              oauthGroup.style.display = 'block';
+             nonProGroup.style.display = 'flex';
+             sharedModelsGroup.style.display = 'flex';
              btn.textContent = 'Start OAuth Login';
              btn.classList.remove('primary');
              btn.classList.add('warning'); // just a visual cue
@@ -533,6 +574,10 @@ function initConfig() {
           } else {
              tokenGroup.style.display = 'flex';
              oauthGroup.style.display = 'none';
+             nonProGroup.style.display = 'none';
+             nonProInput.checked = false;
+             sharedModelsGroup.style.display = 'none';
+             sharedModelsInput.checked = true;
              btn.textContent = 'Add Account';
              btn.classList.remove('warning');
              btn.classList.add('primary');
@@ -593,7 +638,12 @@ function initConfig() {
                            
                            api('/api/accounts/oauth/finish', {
                               method: 'POST',
-                              body: JSON.stringify({ sessionId: currentOauthSessionId, name: name })
+                              body: JSON.stringify({
+                                sessionId: currentOauthSessionId,
+                                name: name,
+                                isNonPro: nonProInput.checked,
+                                allowSharedModels: sharedModelsInput.checked
+                              })
                            })
                            .then(function() {
                               cleanupOauth();

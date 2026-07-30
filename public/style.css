@@ -388,6 +388,18 @@ main {
   font-size: 0.875rem;
 }
 
+.account-checkbox {
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.account-checkbox input {
+  width: 1rem;
+  height: 1rem;
+}
+
 .card-desc {
   font-size: 0.8125rem;
   color: var(--text-secondary);

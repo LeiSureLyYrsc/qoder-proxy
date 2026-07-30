@@ -267,7 +267,7 @@ test('the root route no longer exposes local filesystem paths', async () => {
   try {
     const body = await (await fetch(`${baseUrl}/`)).json();
     assert.equal(body.ok, true);
-    assert.equal(typeof body.cli_backend, 'string');
+    assert.equal('cli_backend' in body, false);
     // cli_home embedded the OS username; cli_command could hold a full path.
     assert.equal('cli_home' in body, false);
     assert.equal('cli_command' in body, false);

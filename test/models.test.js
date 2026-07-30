@@ -79,3 +79,14 @@ test('getModel returns undefined for unknown ID', () => {
 test('DEFAULT_MODEL_ID is qoder-cn', () => {
   assert.equal(DEFAULT_MODEL_ID, 'qoder-cn');
 });
+
+test('models expose their supported CLI backends', () => {
+  assert.deepEqual(getModel('ultimate').backends, ['global']);
+  assert.deepEqual(getModel('qoder-cn').backends, ['cn']);
+  assert.deepEqual(getModel('qwen3.7-max').backends, ['cn', 'global']);
+});
+
+test('Auto resolves to the backend-specific CLI spelling', () => {
+  assert.equal(resolveModelRoute('auto', 'cn').cliModel, 'auto');
+  assert.equal(resolveModelRoute('auto', 'global').cliModel, 'Auto');
+});
