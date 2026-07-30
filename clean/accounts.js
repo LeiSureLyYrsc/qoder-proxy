@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const DATA_DIR = path.join(process.cwd(), 'data');
+const DATA_DIR = process.env.QODER_DATA_DIR || path.join(process.cwd(), 'data');
 const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
 
 function ensureDataDir() {

@@ -21,7 +21,7 @@
   "scripts": {
     "start": "node clean/server.js",
     "dev": "node clean/server.js",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1 --require ./scripts/test-setup.js \"test/**/*.test.js\"",
     "smoke": "node scripts/smoke.js",
     "smoke:full": "node scripts/smoke.js --full"
   },
