@@ -174,6 +174,21 @@ docker compose down
 
 如确实需要从其他设备访问，可设置 `DOCKER_BIND_ADDRESS`，但不要将代理直接暴露到公网。
 
+GitHub Actions 会在 push 到仓库后自动构建并推送镜像到 GitHub Container Registry。镜像地址为：
+
+```text
+ghcr.io/<github-owner>/<repository>
+```
+
+默认分支会额外生成 `latest` 标签；每次 push 还会生成分支标签和 Git commit SHA 标签。拉取最新镜像并启动：
+
+```powershell
+docker pull ghcr.io/<github-owner>/<repository>:latest
+docker compose up -d
+```
+
+Pull Request 只执行测试和 Docker 构建，不会推送镜像。首次发布后，可在仓库的 **Packages** 页面配置镜像可见性。
+
 ## 模型路由
 
 不再通过全局 Backend 开关选 CLI。每个模型都带有 `cn` / `global` 支持标记，代理会根据请求模型从兼容账号中选取账号，并调用对应的 `qoderclicn` 或 `qodercli`。
