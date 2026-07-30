@@ -6,9 +6,9 @@ WORKDIR /app
 # Copy package files
 COPY package.json package-lock.json* pnpm-lock.yaml* ./
 
-# Install dependencies
+# Install dependencies and ignore pnpm minimum release age check
 RUN if [ -f pnpm-lock.yaml ]; then \
-        npm install -g pnpm && pnpm install --frozen-lockfile --prod; \
+        npm install -g pnpm && pnpm config set ignore-dep-scripts true && pnpm install --frozen-lockfile --prod --config.ignore-compatibility-db=true --config.minimum-release-age=0; \
     elif [ -f package-lock.json ]; then \
         npm ci --omit=dev; \
     else \
