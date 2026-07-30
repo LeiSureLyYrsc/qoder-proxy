@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Set working directory
 WORKDIR /app
@@ -19,7 +19,7 @@ RUN if [ -f pnpm-lock.yaml ]; then \
 COPY clean/ clean/
 COPY public/ public/
 COPY scripts/ scripts/
-COPY opencode.json start-proxy.cmd start-ui.cmd usage.json ./
+COPY opencode.json start-proxy.cmd start-ui.cmd ./
 
 # Expose port
 EXPOSE 3000
