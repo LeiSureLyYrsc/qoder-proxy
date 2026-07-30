@@ -630,12 +630,13 @@ function createApp() {
         res.json(createChatCompletion({ model, content: finalContent, parsedOutput: finalParsedOutput }));
       }
       log('chat request completed', { duration_ms: Date.now() - started });
-      trackRequest({
-        model,
-        inputText: extractTextFromMessages(req.body.messages),
-        outputText: finalContent || '',
-        isError: false,
-      });
+        trackRequest({
+          model,
+          inputText: extractTextFromMessages(req.body.messages),
+          outputText: finalContent || '',
+          isError: false,
+          account,
+        });
     } catch (error) {
       log('chat request failed', {
         code: error.code || 'internal_error',
@@ -643,11 +644,13 @@ function createApp() {
         duration_ms: Date.now() - started,
         message: error.message,
       });
+      // Use account from scope if it exists; otherwise not tracking global failures
       trackRequest({
         model: req.body?.model || MODEL_ID,
         inputText: extractTextFromMessages(req.body?.messages),
         outputText: '',
         isError: true,
+        account: typeof account !== 'undefined' ? account : null,
       });
       if (!res.headersSent && !res.writableEnded) openAiError(res, error);
     }
@@ -845,6 +848,7 @@ function createApp() {
           inputText: extractTextFromMessages(req.body.messages),
           outputText: '',
           isError: !streamSuccess,
+          account,
         });
         return;
       }
@@ -990,6 +994,7 @@ function createApp() {
         inputText: extractTextFromMessages(req.body.messages),
         outputText: anthropicContent || '',
         isError: false,
+        account,
       });
     } catch (error) {
       log('anthropic message request failed', {
@@ -998,11 +1003,13 @@ function createApp() {
         duration_ms: Date.now() - started,
         message: error.message,
       });
+      // Use account from scope if it exists; otherwise not tracking global failures
       trackRequest({
         model: req.body?.model || MODEL_ID,
         inputText: extractTextFromMessages(req.body?.messages),
         outputText: '',
         isError: true,
+        account: typeof account !== 'undefined' ? account : null,
       });
       if (!res.headersSent && !res.writableEnded) anthropicError(res, error);
     }

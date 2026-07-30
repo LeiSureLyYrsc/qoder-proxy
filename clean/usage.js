@@ -46,7 +46,12 @@ function extractTextFromMessages(messages) {
     .join('');
 }
 
-function trackRequest({ model, inputText, outputText, isError }) {
+function trackRequest({ model, inputText, outputText, isError, account }) {
+  // 只统计 CN 账号的调用
+  if (account && account.backend !== 'cn') {
+    return;
+  }
+
   const today = getToday();
   if (today !== lastResetDate) {
     stats.requestsToday = 0;

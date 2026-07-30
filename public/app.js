@@ -725,72 +725,72 @@ function loadUsage() {
 
   api('/usage/local')
     .then(function (data) {
-      var modelRows = '';
-      if (data.requestsByModel && Object.keys(data.requestsByModel).length > 0) {
-        var rows = Object.keys(data.requestsByModel).map(function (model) {
-          return (
-            '<tr>' +
-              '<td><code>' + escapeHtml(model) + '</code></td>' +
-              '<td>' + data.requestsByModel[model] + '</td>' +
-            '</tr>'
-          );
-        }).join('');
-        modelRows =
-          '<div class="glass card" style="padding:0;overflow:hidden;">' +
-            '<table>' +
-              '<thead><tr><th style="padding:0.75rem 1rem">Model</th><th style="padding:0.75rem 1rem">Requests</th></tr></thead>' +
-              '<tbody>' + rows + '</tbody>' +
-            '</table>' +
-          '</div>';
-      }
-
-      var lastReq = data.lastRequestAt
-        ? new Date(data.lastRequestAt).toLocaleString()
-        : 'Never';
-
-      container.innerHTML =
-        '<div class="alert warning">These are <strong>local estimates only</strong>. They do not represent official Qoder billing or remaining quota.</div>' +
-
-        '<div class="stat-grid">' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Total Requests</div>' +
-            '<div class="stat-value">' + data.totalRequests + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Today</div>' +
-            '<div class="stat-value">' + data.requestsToday + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Errors</div>' +
-            '<div class="stat-value ' + (data.errorCount > 0 ? 'error' : '') + '">' + data.errorCount + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Est. Input Tokens</div>' +
-            '<div class="stat-value">' + data.estimatedInputTokens.toLocaleString() + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Est. Output Tokens</div>' +
-            '<div class="stat-value">' + data.estimatedOutputTokens.toLocaleString() + '</div>' +
-          '</div>' +
-          '<div class="glass stat-item">' +
-            '<div class="stat-label">Est. Total Tokens</div>' +
-            '<div class="stat-value">' + data.estimatedTotalTokens.toLocaleString() + '</div>' +
-          '</div>' +
-        '</div>' +
-
-        '<div class="glass card">' +
-          '<h3 style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:0.75rem">Session Info</h3>' +
+    var modelRows = '';
+    if (data.requestsByModel && Object.keys(data.requestsByModel).length > 0) {
+      var rows = Object.keys(data.requestsByModel).map(function (model) {
+        return (
+          '<tr>' +
+            '<td><code>' + escapeHtml(model) + '</code></td>' +
+            '<td>' + data.requestsByModel[model] + '</td>' +
+          '</tr>'
+        );
+      }).join('');
+      modelRows =
+        '<div class="glass card" style="padding:0;overflow:hidden;">' +
           '<table>' +
-            '<tbody>' +
-              '<tr><td>Started</td><td>' + new Date(data.startedAt).toLocaleString() + '</td></tr>' +
-              '<tr><td>Last Request</td><td>' + lastReq + '</td></tr>' +
-            '</tbody>' +
+            '<thead><tr><th style="padding:0.75rem 1rem">模型</th><th style="padding:0.75rem 1rem">调用次数</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
           '</table>' +
+        '</div>';
+    }
+
+    var lastReq = data.lastRequestAt
+      ? new Date(data.lastRequestAt).toLocaleString()
+      : '无';
+
+    container.innerHTML =
+      '<div class="alert warning">以下均为<strong>本地估算值</strong>，不代表官方 Qoder 账单或真实剩余额度。注意：Qoder Global 模型不计入此统计。</div>' +
+
+      '<div class="stat-grid">' +
+        '<div class="glass stat-item">' +
+          '<div class="stat-label">总调用次数</div>' +
+          '<div class="stat-value">' + data.totalRequests + '</div>' +
         '</div>' +
+        '<div class="glass stat-item">' +
+          '<div class="stat-label">今日调用</div>' +
+          '<div class="stat-value">' + data.requestsToday + '</div>' +
+        '</div>' +
+        '<div class="glass stat-item">' +
+          '<div class="stat-label">请求失败</div>' +
+          '<div class="stat-value ' + (data.errorCount > 0 ? 'error' : '') + '">' + data.errorCount + '</div>' +
+        '</div>' +
+        '<div class="glass stat-item">' +
+          '<div class="stat-label">估算输入 Token</div>' +
+          '<div class="stat-value">' + data.estimatedInputTokens.toLocaleString() + '</div>' +
+        '</div>' +
+        '<div class="glass stat-item">' +
+          '<div class="stat-label">估算输出 Token</div>' +
+          '<div class="stat-value">' + data.estimatedOutputTokens.toLocaleString() + '</div>' +
+        '</div>' +
+        '<div class="glass stat-item">' +
+          '<div class="stat-label">估算总 Token</div>' +
+          '<div class="stat-value">' + data.estimatedTotalTokens.toLocaleString() + '</div>' +
+        '</div>' +
+      '</div>' +
 
-        modelRows +
+      '<div class="glass card">' +
+        '<h3 style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:0.75rem">会话信息</h3>' +
+        '<table>' +
+          '<tbody>' +
+            '<tr><td>统计起始时间</td><td>' + new Date(data.startedAt).toLocaleString() + '</td></tr>' +
+            '<tr><td>最后一次请求</td><td>' + lastReq + '</td></tr>' +
+          '</tbody>' +
+        '</table>' +
+      '</div>' +
 
-        '<button class="btn danger" id="reset-usage-btn">Reset Local Stats</button>';
+      modelRows +
+
+      '<button class="btn danger" id="reset-usage-btn">重置本地统计数据</button>';
       container.dataset.loaded = '1';
 
       document.getElementById('reset-usage-btn').addEventListener('click', resetUsage);

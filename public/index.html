@@ -29,27 +29,27 @@
       <nav class="sidebar-nav">
         <button data-tab="dashboard" class="nav-item active">
           <span class="nav-icon">◧</span>
-          <span class="nav-label">Dashboard</span>
+          <span class="nav-label">控制面板</span>
         </button>
         <button data-tab="models" class="nav-item">
           <span class="nav-icon">◬</span>
-          <span class="nav-label">Models</span>
+          <span class="nav-label">模型</span>
         </button>
         <button data-tab="chat" class="nav-item">
           <span class="nav-icon">✉</span>
-          <span class="nav-label">Chat Test</span>
+          <span class="nav-label">对话测试</span>
         </button>
         <button data-tab="config" class="nav-item">
           <span class="nav-icon">⚙️</span>
-          <span class="nav-label">Config</span>
+          <span class="nav-label">配置</span>
         </button>
         <button data-tab="accounts" class="nav-item">
           <span class="nav-icon">👥</span>
-          <span class="nav-label">Accounts</span>
+          <span class="nav-label">账号池</span>
         </button>
         <button data-tab="usage" class="nav-item">
           <span class="nav-icon">◐</span>
-          <span class="nav-label">Usage / Credits</span>
+          <span class="nav-label">用量 / 额度</span>
         </button>
       </nav>
     </aside>
@@ -62,40 +62,40 @@
       <!-- Dashboard -->
       <section id="dashboard" class="tab-content active">
         <div class="page-header">
-          <h2>Dashboard</h2>
+          <h2>控制面板</h2>
           <p class="page-desc">服务运行状态总览</p>
         </div>
         <div id="dashboard-content">
-          <div class="loading">Loading...</div>
+          <div class="loading">加载中...</div>
         </div>
       </section>
 
       <!-- Models -->
       <section id="models" class="tab-content">
         <div class="page-header">
-          <h2>Models</h2>
+          <h2>模型</h2>
           <p class="page-desc">可用模型列表</p>
         </div>
         <div id="models-content">
-          <div class="loading">Loading...</div>
+          <div class="loading">加载中...</div>
         </div>
       </section>
 
       <!-- Chat Test -->
       <section id="chat" class="tab-content">
         <div class="page-header">
-          <h2>Chat Test</h2>
+          <h2>对话测试</h2>
           <p class="page-desc">测试与模型的对话交互</p>
         </div>
         <div class="chat-layout">
           <div class="glass chat-panel">
             <div class="chat-header">
-              <h3>Chat</h3>
+              <h3>对话</h3>
             </div>
             <div id="chat-messages" class="chat-messages">
               <div class="chat-placeholder">
                 <span class="chat-placeholder-icon">✉</span>
-                <p>Send a message to start chatting</p>
+                <p>发送消息以开始对话</p>
               </div>
             </div>
             <div class="chat-input-area">
@@ -103,7 +103,7 @@
                 <select id="chat-model"></select>
               </div>
               <div class="chat-textarea-wrap">
-                <textarea id="chat-message" rows="3" placeholder="Enter your message..."></textarea>
+                <textarea id="chat-message" rows="3" placeholder="输入您的消息..."></textarea>
                 <button id="chat-send" class="btn primary chat-send-btn" type="submit">
                   <span class="send-icon">→</span>
                 </button>
@@ -116,19 +116,17 @@
       <!-- Config -->
       <section id="config" class="tab-content">
         <div class="page-header">
-          <h2>Config</h2>
+          <h2>配置</h2>
           <p class="page-desc">配置客户端连接信息</p>
         </div>
         <div id="config-content">
           <div class="glass card">
             <div class="card-header">
               <span class="card-icon">🔑</span>
-              <h3>Proxy API Key</h3>
+              <h3>代理 API Key</h3>
             </div>
             <p class="card-desc">
-              If you set <code>PROXY_API_KEY</code> in <code>.env</code>, enter it here so this
-              console can call the proxy. Stored in this browser only, never sent anywhere else.
-              Leave empty if you did not set one.
+              如果您在 <code>.env</code> 中设置了 <code>PROXY_API_KEY</code>，请在此处输入以允许本控制台调用代理。密钥仅存储在当前浏览器中，绝不外泄。如果您没有设置，请留空。
             </p>
             <div class="api-key-row">
               <input
@@ -139,7 +137,7 @@
                 autocomplete="off"
                 spellcheck="false"
               />
-              <button class="btn primary" id="api-key-save">Save</button>
+              <button class="btn primary" id="api-key-save">保存</button>
             </div>
             <p id="api-key-status" class="api-key-status"></p>
           </div>
@@ -148,28 +146,28 @@
             <div class="glass card">
               <div class="card-header">
                 <span class="card-icon">🔌</span>
-                <h3>OpenAI Compatible</h3>
+                <h3>OpenAI 兼容客户端</h3>
               </div>
-              <p class="card-desc">For clients that support custom OpenAI-compatible endpoints:</p>
+              <p class="card-desc">适用于支持自定义 OpenAI 兼容端点的客户端：</p>
               <div class="code-block">
                 <pre><code id="config-openai">{
   "baseUrl": "http://127.0.0.1:3000/v1",
-  "apiKey": "your-PROXY_API_KEY"
+  "apiKey": "您的-PROXY_API_KEY"
 }</code></pre>
-                <button class="btn copy" data-target="config-openai">Copy</button>
+                <button class="btn copy" data-target="config-openai">复制</button>
               </div>
             </div>
 
             <div class="glass card">
               <div class="card-header">
                 <span class="card-icon">🔌</span>
-                <h3>Anthropic Compatible</h3>
+                <h3>Anthropic 兼容客户端</h3>
               </div>
-              <p class="card-desc">For clients that support custom Anthropic-compatible endpoints:</p>
+              <p class="card-desc">适用于支持自定义 Anthropic 兼容端点的客户端：</p>
               <div class="code-block">
                 <pre><code id="config-anthropic">ANTHROPIC_BASE_URL=http://127.0.0.1:3000
-ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
-                <button class="btn copy" data-target="config-anthropic">Copy</button>
+ANTHROPIC_AUTH_TOKEN=您的-PROXY_API_KEY</code></pre>
+                <button class="btn copy" data-target="config-anthropic">复制</button>
               </div>
             </div>
 
@@ -178,10 +176,10 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
                 <span class="card-icon">💻</span>
                 <h3>OpenCode</h3>
               </div>
-              <p class="card-desc">Use with OpenCode CLI:</p>
+              <p class="card-desc">在 OpenCode CLI 中使用：</p>
               <div class="code-block">
                 <pre><code id="config-opencode">opencode run --model qoder-cn-local/qwen3.7-max --variant high "reply OK"</code></pre>
-                <button class="btn copy" data-target="config-opencode">Copy</button>
+                <button class="btn copy" data-target="config-opencode">复制</button>
               </div>
             </div>
           </div>
@@ -191,22 +189,22 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
       <!-- Accounts -->
       <section id="accounts" class="tab-content">
         <div class="page-header">
-          <h2>Account Pool</h2>
+          <h2>账号池</h2>
           <p class="page-desc">管理本地账号池及限速状态</p>
         </div>
         <div id="accounts-content">
           <div class="glass card form-card">
             <div class="card-header">
               <span class="card-icon">➕</span>
-              <h3>Add New Account</h3>
+              <h3>添加新账号</h3>
             </div>
             <div class="account-form">
               <div class="form-group">
-                <label>Alias</label>
-                <input type="text" id="acc-name" placeholder="e.g. Personal CN Account" />
+                <label>别名</label>
+                <input type="text" id="acc-name" placeholder="例如：个人 CN 账号" />
               </div>
               <div class="form-group">
-                <label>Authentication Channel</label>
+                <label>鉴权通道</label>
                 <select id="acc-backend">
                   <option value="cn">Qoder CN (qoderclicn)</option>
                   <option value="global">Qoder Global (qodercli)</option>
@@ -214,12 +212,12 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
               </div>
               <div class="form-group" id="acc-token-group">
                 <label>Token / PAT</label>
-                <input type="password" id="acc-token" placeholder="Paste Token here" />
+                <input type="password" id="acc-token" placeholder="在此粘贴 Token" />
               </div>
               
               <!-- OAuth specific UI -->
               <div id="acc-oauth-group" style="display: none;">
-                 <p class="text-sm" style="color: var(--text-muted); margin-bottom: 0.5rem;">Qoder Global uses OAuth. Clicking the button below will start the login flow.</p>
+                 <p class="text-sm" style="color: var(--text-muted); margin-bottom: 0.5rem;">Qoder Global 账号使用 OAuth 登录。点击下方按钮将启动登录流程。</p>
                  <div id="acc-oauth-status" class="alert info" style="display:none; font-size: 0.85rem; word-break: break-all;"></div>
               </div>
 
@@ -230,21 +228,21 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
 
               <label id="acc-shared-models-group" class="account-checkbox" style="display: none;">
                 <input type="checkbox" id="acc-shared-models" checked />
-                <span>Allow CN/Global shared models</span>
+                <span>允许使用 CN/Global 共享模型</span>
               </label>
 
-              <button class="btn primary" id="acc-add-btn">Add Account</button>
+              <button class="btn primary" id="acc-add-btn">添加账号</button>
             </div>
           </div>
           
           <div class="glass card list-card">
             <div class="card-header">
               <span class="card-icon">📋</span>
-              <h3>Current Accounts</h3>
-              <button class="btn-icon" id="acc-refresh" title="Refresh">🔄</button>
+              <h3>当前账号</h3>
+              <button class="btn-icon" id="acc-refresh" title="刷新">🔄</button>
             </div>
             <div id="accounts-list">
-              <div class="loading">Loading accounts...</div>
+              <div class="loading">正在加载账号...</div>
             </div>
           </div>
         </div>
@@ -253,19 +251,19 @@ ANTHROPIC_AUTH_TOKEN=your-PROXY_API_KEY</code></pre>
       <!-- Usage / Credits -->
       <section id="usage" class="tab-content">
         <div class="page-header">
-          <h2>Usage / Credits</h2>
+          <h2>用量 / 额度</h2>
           <p class="page-desc">本地使用统计与配额信息</p>
         </div>
         <div id="usage-content">
-          <div class="loading">Loading...</div>
+          <div class="loading">加载中...</div>
         </div>
       </section>
     </main>
   </div>
 
   <footer>
-    <p>Usage statistics are local estimates only. They do not represent official Qoder billing or remaining quota.</p>
-    <p>This UI does not read, save, or display Qoder PAT.</p>
+    <p>使用统计仅为本地估算值，不代表官方 Qoder 账单或剩余额度。</p>
+    <p>此界面不会读取、保存或显示 Qoder PAT。</p>
   </footer>
 
   <script src="app.js"></script>
