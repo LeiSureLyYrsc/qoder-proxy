@@ -156,6 +156,24 @@ http://127.0.0.1:3000
 
 如果你通过环境变量或代码改动手动设置 host，请保持 `127.0.0.1`。不要绑定 `0.0.0.0`，不要通过端口映射、反向代理、隧道或云服务器暴露给公网。
 
+### Docker
+
+需要 Docker Engine 和 Docker Compose。使用 Node 24 构建并启动代理：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+```
+
+容器默认仅绑定宿主机回环地址，访问地址仍为 `http://127.0.0.1:3000`。账号和 OAuth 数据保存在 Compose volume `qoder-proxy-data` 中。查看日志或停止服务：
+
+```powershell
+docker compose logs -f qoder-proxy
+docker compose down
+```
+
+如确实需要从其他设备访问，可设置 `DOCKER_BIND_ADDRESS`，但不要将代理直接暴露到公网。
+
 ## 模型路由
 
 不再通过全局 Backend 开关选 CLI。每个模型都带有 `cn` / `global` 支持标记，代理会根据请求模型从兼容账号中选取账号，并调用对应的 `qoderclicn` 或 `qodercli`。

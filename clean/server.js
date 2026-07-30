@@ -3,7 +3,7 @@ const { log } = require('./logger');
 const { isProxyAuthEnabled } = require('./auth');
 const accountsManager = require('./accounts');
 
-const HOST = '127.0.0.1';
+const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || 3000);
 
 const app = createApp();

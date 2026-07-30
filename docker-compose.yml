@@ -1,0 +1,31 @@
+services:
+  qoder-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qoder-proxy:local
+    restart: unless-stopped
+    ports:
+      - "${DOCKER_BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      NODE_ENV: production
+    volumes:
+      - qoder-proxy-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  qoder-proxy-data:
